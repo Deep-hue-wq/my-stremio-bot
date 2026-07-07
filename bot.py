@@ -1,6 +1,12 @@
+# 🛡️ PYTHON 3.14 SEMANTICS FIX: Patches the strict asyncio event loop policy before loading Pyrogram
+import asyncio
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 import os
 import re
-import asyncio
 from aiohttp import web
 from pymongo import MongoClient
 from pyrogram import Client, filters
@@ -105,7 +111,6 @@ async def catalog_route(request):
 
 async def stream_route(request):
     raw_id = request.match_info['id']
-    # Dynamic sanitization: Strips out any trailing extensions or routing prefixes sent by Stremio
     clean_id = raw_id.replace(".json", "").split(":")[-1]
     
     streams = []
@@ -153,7 +158,7 @@ async def start_web_server():
     app.router.add_get('/', manifest_route)
     app.router.add_get('/manifest.json', manifest_route)
     app.router.add_get('/catalog/{type}/{id}.json', catalog_route)
-    app.router.add_get('/stream/{type}/{id}', stream_route)  # Catches direct stream paths
+    app.router.add_get('/stream/{type}/{id}', stream_route)
     app.router.add_get('/watch/{file_id}', watch_route)
     runner = web.AppRunner(app)
     await runner.setup()
