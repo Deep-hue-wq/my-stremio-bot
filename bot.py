@@ -1,6 +1,12 @@
+import asyncio
+# 🛡️ HARD PYTHON 3.14 COMPATIBILITY PATCH: Must execute on Line 1 before any framework imports
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 import os
 import re
-import asyncio
 import requests
 from aiohttp import web
 from pymongo import MongoClient
@@ -19,7 +25,7 @@ try:
 except Exception as e:
     print(f"⚠️ Webhook clear bypass note: {e}", flush=True)
 
-# Now import Pyrogram safely after the network reset
+# Now import Pyrogram safely after the asyncio loop is guaranteed to exist
 from pyrogram import Client, filters
 
 print("\n=== UPGRADED STREMIO STREAM ENGINE ONLINE ===", flush=True)
@@ -70,7 +76,6 @@ async def native_file_handler(client, message):
         file_id = media.file_id
         file_size = media.file_size
         
-        # Pull the dynamic Render URL domain directly from the server layout configuration
         render_domain = os.getenv("RENDER_EXTERNAL_URL", "").rstrip('/')
         if not render_domain:
             render_domain = "https://my-stremio-bot.onrender.com"
@@ -130,7 +135,7 @@ async def stream_route(request):
         
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ 4. CHUNK PROXIER (Streams file directly from cloud arrays without utilizing local storage)
+# ⚡ 4. CHUNK PROXIER
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
@@ -151,7 +156,6 @@ async def watch_route(request):
         pass
     return response
 
-# Clean integration into Python 3.14 Event lifecycle loop
 async def startup_bridge(app):
     await tg_client.start()
     print("🟢 HIGH-SPEED TELEGRAM STREAM TUNNEL INSTANTIATED", flush=True)
