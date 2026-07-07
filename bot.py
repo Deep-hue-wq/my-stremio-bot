@@ -1,177 +1,167 @@
-import asyncio
-# 🛡️ HARD PYTHON 3.14 COMPATIBILITY PATCH: Must execute on Line 1 before any framework imports
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
 import os
-import re
+import http.server
+import socketserver
+import threading
+import json
 import requests
-from aiohttp import web
+import time
+import re
 from pymongo import MongoClient
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MONGO_URI = os.getenv("MONGO_URI1", "").strip()
-API_ID = int(os.getenv("API_ID", "0").strip())
-API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-# 🧹 ANTI-HIJACK: Forcefully delete any stuck ghost webhooks from Telegram's servers
-print("🧹 Cleaning stuck Telegram webhooks...", flush=True)
+print("\n=== ENGINE RESET: PURE HTTP BOT ACTIVATED ===", flush=True)
+
+# Connect Database Storage Grid
 try:
-    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=10)
-    print("✨ Telegram server cache cleared successfully!", flush=True)
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
+    db = client.stremio_bridge
+    streams_col = db.streams
+    client.admin.command('ping')
+    print("🟢 MONGO DATABASE: CONNECTED SUCCESSFULLY", flush=True)
 except Exception as e:
-    print(f"⚠️ Webhook clear bypass note: {e}", flush=True)
+    print(f"🔴 MONGO DATABASE: CONNECTION FAILED -> {e}", flush=True)
 
-# Now import Pyrogram safely after the asyncio loop is guaranteed to exist
-from pyrogram import Client, filters
+# Forcefully remove any lingering webhook rules on Telegram's end
+try:
+    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
+    print("🧹 Telegram webhook cache explicitly cleared!", flush=True)
+except Exception:
+    pass
 
-print("\n=== UPGRADED STREMIO STREAM ENGINE ONLINE ===", flush=True)
+class StremioRouter(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Methods", "*")
+        super().end_headers()
 
-# Connect Global Database
-client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
-db = client.stremio_bridge
-streams_col = db.streams
-
-# Initialize MTProto Streaming Client
-tg_client = Client("stremio_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# 🎬 1. PARSE INCOMING TEXT LINKS (StreamVault Pro Layouts)
-@tg_client.on_message(filters.text | filters.caption)
-async def text_link_handler(client, message):
-    text_content = message.text or message.caption or ""
-    if text_content.startswith("/start"):
-        reply = "🟢 High-Speed Extraction Engine Natively Active!\n\n• Forward raw movie files directly here to play them.\n• Forward link text blocks to sync them automatically."
-        await message.reply_text(reply)
-        return
-
-    if "http" in text_content or "Stream Link" in text_content:
-        urls = re.findall(r'(https?://\S+)', text_content)
-        stream_urls = [u for u in urls if "stream" in u or "dl" in u or "vault" in u]
-        final_url = stream_urls[0] if stream_urls else (urls[0] if urls else None)
-        
-        if final_url:
-            file_name = "Synced Media Link"
-            name_match = re.search(r'File:\s*(.*)', text_content, re.IGNORECASE)
-            if name_match:
-                file_name = name_match.group(1).split("\n")[0].strip()
-            else:
-                first_line = text_content.split("\n")[0]
-                if len(first_line) > 5:
-                    file_name = first_line.strip()
+    def do_GET(self):
+        if self.path == "/" or "manifest.json" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            manifest = {
+                "id": "org.deepsstremio.telegram",
+                "version": "3.5.0",
+                "name": "Telegram Library",
+                "description": "Instant high-speed video streams synced from your bot link blocks.",
+                "resources": ["catalog", "stream"],
+                "types": ["movie", "series"],
+                "catalogs": [{"type": "movie", "id": "tg_catalog", "name": "Telegram Library"}]
+            }
+            self.wfile.write(json.dumps(manifest).encode())
+            return
             
-            file_name = file_name.replace("*", "").replace("_", " ").strip()
-            streams_col.insert_one({"file_name": file_name, "tg_url": final_url})
-            await message.reply_text(f"✅ Text Link Synced to Stremio!\n📁 {file_name}")
-
-# 🚀 2. PARSE RAW VIDEO ATTACHMENTS (Lucy Files)
-@tg_client.on_message(filters.video | filters.document)
-async def native_file_handler(client, message):
-    media = message.video or message.document
-    file_name = getattr(media, 'file_name', '') or "Telegram Video Stream"
-    
-    if file_name.endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm')) or "video" in getattr(media, 'mime_type', ''):
-        file_id = media.file_id
-        file_size = media.file_size
-        
-        render_domain = os.getenv("RENDER_EXTERNAL_URL", "").rstrip('/')
-        if not render_domain:
-            render_domain = "https://my-stremio-bot.onrender.com"
+        elif "/catalog/" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            metas = []
+            try:
+                for doc in streams_col.find().sort("_id", -1).limit(100):
+                    metas.append({
+                        "id": f"tg_meta:{str(doc['_id'])}",
+                        "type": "movie",
+                        "name": doc["file_name"],
+                        "poster": "https://images.slideteam.net/wp-content/uploads/2016/11/04/Video-player-icon-graphic-design-PowerPoint-Templates-Slide-1.jpg",
+                        "description": "Stream Link Ready"
+                    })
+            except Exception as e:
+                print(f"🔴 Catalog Error: {e}", flush=True)
+            self.wfile.write(json.dumps({"metas": metas}).encode())
+            return
             
-        live_stream_url = f"{render_domain}/watch/{file_id}"
-        
-        streams_col.insert_one({
-            "file_name": file_name,
-            "tg_url": live_stream_url,
-            "file_id": file_id,
-            "file_size": file_size
-        })
-        await message.reply_text(f"✅ Raw Video File Synced to Stremio!\n📁 {file_name}")
+        elif "/stream/" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            raw_id = self.path.replace(".json", "").split(":")[-1]
+            streams = []
+            try:
+                from bson.objectid import ObjectId
+                doc = streams_col.find_one({"_id": ObjectId(raw_id)})
+                if doc and "tg_url" in doc:
+                    streams.append({
+                        "title": f"🎬 Play Stream: {doc['file_name']}",
+                        "url": doc["tg_url"]
+                    })
+            except Exception as e:
+                print(f"🔴 Stream Fetch Error: {e}", flush=True)
+            self.wfile.write(json.dumps({"streams": streams}).encode())
+            return
+            
+        self.send_response(200)
+        self.end_headers()
 
-# 📡 3. STREMIO LAYER ROUTER CORES
-async def manifest_route(request):
-    return web.json_response({
-        "id": "org.deepsstremio.telegram",
-        "version": "3.0.0",
-        "name": "Telegram Library",
-        "description": "Instant high-speed video streams synced from your bot.",
-        "resources": ["catalog", "stream"],
-        "types": ["movie", "series"],
-        "catalogs": [{"type": "movie", "id": "tg_catalog", "name": "Telegram Library"}]
-    }, headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+def run_web_server():
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer(("0.0.0.0", PORT), StremioRouter) as httpd:
+        print(f"🟢 Stremio Web Server active on port {PORT}", flush=True)
+        httpd.serve_forever()
 
-async def catalog_route(request):
-    metas = []
-    try:
-        for doc in streams_col.find().sort("_id", -1).limit(100):
-            metas.append({
-                "id": f"tg_meta:{str(doc['_id'])}",
-                "type": "movie",
-                "name": doc["file_name"],
-                "poster": "https://images.slideteam.net/wp-content/uploads/2016/11/04/Video-player-icon-graphic-design-PowerPoint-Templates-Slide-1.jpg",
-                "description": "Ready to Stream Natively"
-            })
-    except Exception as e:
-        print(f"🔴 Catalog Error: {e}", flush=True)
-    return web.json_response({"metas": metas}, headers={"Access-Control-Allow-Origin": "*"})
-
-async def stream_route(request):
-    raw_id = request.match_info['id']
-    clean_id = raw_id.replace(".json", "").split(":")[-1]
-    
-    streams = []
-    try:
-        from bson.objectid import ObjectId
-        doc = streams_col.find_one({"_id": ObjectId(clean_id)})
-        if doc and "tg_url" in doc:
-            streams.append({
-                "title": f"🎬 Play Live Stream",
-                "url": doc["tg_url"]
-            })
-    except Exception as e:
-        print(f"🔴 Stream Engine Translation Block: {e}", flush=True)
-        
-    return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
-
-# ⚡ 4. CHUNK PROXIER
-async def watch_route(request):
-    file_id = request.match_info['file_id']
-    doc = streams_col.find_one({"file_id": file_id})
-    file_size = doc["file_size"] if doc else None
-    file_name = doc["file_name"] if doc else "stream.mkv"
-    
-    headers = {"Content-Type": "video/mp4", "Access-Control-Allow-Origin": "*"}
-    if file_size:
-        headers["Content-Length"] = str(file_size)
-        headers["Content-Disposition"] = f'inline; filename="{file_name}"'
-        
-    response = web.StreamResponse(status=200, headers=headers)
-    await response.prepare(request)
-    try:
-        async for chunk in tg_client.stream_media(file_id):
-            await response.write(chunk)
-    except Exception:
-        pass
-    return response
-
-async def startup_bridge(app):
-    await tg_client.start()
-    print("🟢 HIGH-SPEED TELEGRAM STREAM TUNNEL INSTANTIATED", flush=True)
-
-async def shutdown_bridge(app):
-    await tg_client.stop()
+def telegram_polling_loop():
+    print("🟢 TELEGRAM HTTP LISTENER ONLINE AND ACTIVE", flush=True)
+    offset = 0
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={offset}&timeout=0"
+            req = requests.get(url, headers={"Connection": "close"}, timeout=5)
+            if req.status_code != 200:
+                time.sleep(2)
+                continue
+                
+            response = req.json()
+            results = response.get("result", [])
+            
+            for update in results:
+                offset = update["update_id"] + 1
+                if "message" not in update:
+                    continue
+                msg = update["message"]
+                chat_id = msg["chat"]["id"]
+                
+                text_content = msg.get("text", "") or msg.get("caption", "") or ""
+                
+                if text_content.startswith("/start"):
+                    reply = "🟢 Extraction Bot Online!\n\nForward any text link block message from your link generator bot (like StreamVault Pro) here, and I will instantly extract the streaming links into Stremio layout!"
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
+                    continue
+                
+                # Explicitly catch raw media attachments (Lucy style files) to instruct the user
+                if "video" in msg or "document" in msg:
+                    reply = "⚠️ Raw File Forwarding Note!\n\nBecause this video file is hosted on Telegram's internal network, standard bots cannot stream it directly due to file size limits.\n\n👉 **Fix:** Please forward the text link block message from your link generator bot (the one with the 'Stream Link' HTTP URL layout) instead of the raw file!"
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
+                    continue
+                
+                if "http" in text_content or "Stream Link" in text_content:
+                    urls = re.findall(r'(https?://\S+)', text_content)
+                    stream_urls = [u for u in urls if "stream" in u or "dl" in u or "vault" in u]
+                    final_url = stream_urls[0] if stream_urls else (urls[0] if urls else None)
+                    
+                    if final_url:
+                        file_name = "Extracted Stream"
+                        name_match = re.search(r'File:\s*(.*)', text_content, re.IGNORECASE)
+                        if name_match:
+                            file_name = name_match.group(1).split("\n")[0].strip()
+                        else:
+                            first_line = text_content.split("\n")[0]
+                            if len(first_line) > 5:
+                                file_name = first_line.strip()
+                                
+                        file_name = file_name.replace("*", "").replace("_", " ").strip()
+                        streams_col.insert_one({"file_name": file_name, "tg_url": final_url})
+                        
+                        reply = f"✅ Automated Sync Complete!\n\n📁 {file_name}\n\nhas been pushed to Stremio. Open your player row now!"
+                        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
+            
+            if not results:
+                time.sleep(1)
+        except Exception:
+            time.sleep(2)
 
 if __name__ == "__main__":
-    app = web.Application()
-    app.on_startup.append(startup_bridge)
-    app.on_cleanup.append(shutdown_bridge)
-    
-    app.router.add_get('/', manifest_route)
-    app.router.add_get('/manifest.json', manifest_route)
-    app.router.add_get('/catalog/{type}/{id}.json', catalog_route)
-    app.router.add_get('/stream/{type}/{id}.json', stream_route)
-    app.router.add_get('/watch/{file_id}', watch_route)
-    
-    web.run_app(app, host="0.0.0.0", port=PORT)
+    threading.Thread(target=run_web_server, daemon=True).start()
+    telegram_polling_loop()
