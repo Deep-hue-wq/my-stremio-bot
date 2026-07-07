@@ -221,22 +221,48 @@ async def stream_route(request):
         print(f"🔴 Stream Error: {e}", flush=True)
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ 3. LIVE CHUNK STORAGE PROXIER (Feeds multi-gigabyte video files to Stremio instantly)
+# ⚡ 3. LIVE SEEK-AWARE TUNNEL STREAM ROUTER (Supports instant timeline fast-forwarding)
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
     file_size = doc["file_size"] if doc else None
     file_name = doc["file_name"] if doc else "stream.mkv"
     
-    headers = {"Content-Type": "video/mp4", "Access-Control-Allow-Origin": "*"}
+    # Check for HTTP Range headers from Stremio to calculate timeline position
+    range_header = request.headers.get("Range", "")
+    start_byte = 0
+    if range_header and "bytes=" in range_header:
+        try:
+            start_byte = int(range_header.split("bytes=")[1].split("-")[0])
+        except Exception:
+            start_byte = 0
+
+    # Telegram/Pyrogram chunk partition index is 1 MiB (1,048,576 bytes)
+    chunk_size = 1024 * 1024
+    offset_chunks = start_byte // chunk_size
+    
+    status = 206 if start_byte > 0 else 200
+    headers = {
+        "Content-Type": "video/mp4",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "*",
+        "Accept-Ranges": "bytes"  # Crucial: Unlocks scrubbing timelines on player
+    }
+    
     if file_size:
-        headers["Content-Length"] = str(file_size)
         headers["Content-Disposition"] = f'inline; filename="{file_name}"'
-        
-    response = web.StreamResponse(status=200, headers=headers)
+        if start_byte > 0:
+            headers["Content-Range"] = f"bytes {start_byte}-{file_size-1}/{file_size}"
+            headers["Content-Length"] = str(file_size - start_byte)
+        else:
+            headers["Content-Length"] = str(file_size)
+            
+    response = web.StreamResponse(status=status, headers=headers)
     await response.prepare(request)
+    
     try:
-        async for chunk in tg_client.stream_media(file_id):
+        # Request data pipeline starting directly from the skipped block location offset
+        async for chunk in tg_client.stream_media(file_id, offset=offset_chunks):
             await response.write(chunk)
     except Exception:
         pass
@@ -259,9 +285,7 @@ async def main():
     await tg_client.start()
     print("🟢 MTProto Streaming Tunnel connected successfully!", flush=True)
     
-    # Spawn the robust HTTP long polling loop inside a persistent background asset thread
     threading.Thread(target=telegram_polling_loop, daemon=True).start()
-    
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
