@@ -1,5 +1,5 @@
 import asyncio
-# 🛡️ SYSTEM FIX: Force-initialize the core event loop environment for Python 3.14 immediately
+# 🛡️ SYSTEM INTEGRITY FIX: Force-initialize the event loop environment for Python 3.14 immediately
 try:
     asyncio.get_event_loop()
 except RuntimeError:
@@ -8,6 +8,8 @@ except RuntimeError:
 import os
 import re
 import json
+import time
+import threading
 import requests
 import urllib.parse
 from aiohttp import web
@@ -19,27 +21,25 @@ API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-# Pre-clear any lingering webhook blocks on Telegram's core database
-try:
-    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
-except Exception:
-    pass
-
-# Safe-import the MTProto client system
-from pyrogram import Client, filters
-
-print("\n=== INITIALIZING MASTER TELEGRAM STREMIO ENGINE ===", flush=True)
+print("\n=== HYBRID CORE: HIGH-SPEED MEDIA PROTOCOL ONLINE ===", flush=True)
 
 # Connect Secure Database Storage
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
 db = client.stremio_bridge
 streams_col = db.streams
 
-# Initialize High-Speed Tunnel Client
+# Forcefully wipe any stuck webhook hooks on Telegram routing databases
+try:
+    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
+except Exception:
+    pass
+
+# Initialize MTProto Streaming Asset (Imported safely after loop generation)
+from pyrogram import Client, filters
 tg_client = Client("stremio_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# 🎬 AUTOMATED METADATA SCRAPER: Fetches official posters & details using Stremio's core database
-def fetch_movie_poster(raw_title):
+# 🎬 CINEMATIC POSTER MATCH ENGINE: Automatically queries Stremio's database for official artwork
+def fetch_movie_metadata(raw_title):
     try:
         clean = re.sub(r'\.(mkv|mp4|avi|mov|webm)$', '', raw_title, flags=re.IGNORECASE)
         clean = clean.replace('.', ' ').replace('_', ' ')
@@ -58,74 +58,110 @@ def fetch_movie_poster(raw_title):
             }
     except Exception:
         pass
-    return {"imdb_id": None, "display_name": raw_title, "poster": "https://images.slideteam.net/wp-content/uploads/2016/11/04/Video-player-icon-graphic-design-PowerPoint-Templates-Slide-1.jpg", "description": "Stream Ready"}
+    return {
+        "imdb_id": None, 
+        "display_name": raw_title, 
+        "poster": "https://images.slideteam.net/wp-content/uploads/2016/11/04/Video-player-icon-graphic-design-PowerPoint-Templates-Slide-1.jpg", 
+        "description": "Cloud Stream Layout Loaded Successfully"
+    }
 
-# 📥 1. PARSE INCOMING TEXT LINKS (StreamVault Pro)
-@tg_client.on_message(filters.text | filters.caption)
-async def text_link_handler(client, message):
-    text_content = message.text or message.caption or ""
-    if text_content.startswith("/start"):
-        await message.reply_text("🟢 High-Speed Cloud Streaming Engine Active!\n\nForward text links or raw movie files here to sync them instantly.")
-        return
-
-    if "http" in text_content or "Stream Link" in text_content:
-        urls = re.findall(r'(https?://\S+)', text_content)
-        stream_urls = [u for u in urls if "stream" in u or "dl" in u or "vault" in u]
-        final_url = stream_urls[0] if stream_urls else (urls[0] if urls else None)
-        
-        if final_url:
-            file_name = "Extracted Video Link"
-            name_match = re.search(r'File:\s*(.*)', text_content, re.IGNORECASE)
-            if name_match:
-                file_name = name_match.group(1).split("\n")[0].strip()
+# 📡 1. BULLETPROOF NATIVE HTTP TELEGRAM ENGINE (Immune to Python 3.14 deadlocks)
+def telegram_polling_loop():
+    print("🟢 TELEGRAM DETECTION LOOP: ACTIVE AND SCANNING", flush=True)
+    offset = 0
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={offset}&timeout=0"
+            req = requests.get(url, headers={"Connection": "close"}, timeout=5)
+            if req.status_code != 200:
+                time.sleep(2)
+                continue
+                
+            response = req.json()
+            results = response.get("result", [])
             
-            meta = fetch_movie_poster(file_name)
-            streams_col.insert_one({
-                "file_name": meta["display_name"],
-                "tg_url": final_url,
-                "imdb_id": meta["imdb_id"],
-                "poster": meta["poster"],
-                "description": meta["description"]
-            })
-            await message.reply_text(f"✅ Link Added with Poster Sync!\n\n📁 {meta['display_name']}")
-
-# 🚀 2. PARSE NATIVE VIDEO ATTACHMENTS (Lucy Files)
-@tg_client.on_message(filters.video | filters.document)
-async def native_file_handler(client, message):
-    media = message.video or message.document
-    file_name = getattr(media, 'file_name', '') or "Telegram Video Stream"
-    
-    if file_name.endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm')) or "video" in getattr(media, 'mime_type', ''):
-        await message.reply_text("⏳ Processing movie formatting and scraping cinematic poster elements...")
-        
-        file_id = media.file_id
-        file_size = media.file_size
-        
-        render_domain = os.getenv("RENDER_EXTERNAL_URL", "").rstrip('/')
-        if not render_domain:
-            render_domain = "https://my-stremio-bot-1.onrender.com"
+            for update in results:
+                offset = update["update_id"] + 1
+                if "message" not in update:
+                    continue
+                msg = update["message"]
+                chat_id = msg["chat"]["id"]
+                
+                text_content = msg.get("text", "") or msg.get("caption", "") or ""
+                
+                if text_content.startswith("/start"):
+                    reply = "🟢 High-Speed Extraction Engine Active!\n\n• Forward link text blocks to sync them.\n• Forward raw media files directly to play them with full poster matching!"
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
+                    continue
+                
+                # 🚀 INTERCEPT RAW VIDEO ATTACHMENTS (Lucy / FiLE Ai items)
+                media = msg.get("video") or msg.get("document")
+                if media and ("video" in media.get("mime_type", "") or media.get("file_name", "").endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))):
+                    file_id = media.get("file_id")
+                    raw_name = media.get("file_name", "Telegram Video Stream")
+                    file_size = media.get("file_size")
+                    
+                    render_domain = os.getenv("RENDER_EXTERNAL_URL", "").rstrip('/')
+                    if not render_domain:
+                        render_domain = "https://my-stremio-bot-1.onrender.com"
+                    
+                    live_stream_url = f"{render_domain}/watch/{file_id}"
+                    meta = fetch_movie_metadata(raw_name)
+                    
+                    streams_col.insert_one({
+                        "file_name": meta["display_name"],
+                        "tg_url": live_stream_url,
+                        "file_id": file_id,
+                        "file_size": file_size,
+                        "imdb_id": meta["imdb_id"],
+                        "poster": meta["poster"],
+                        "description": meta["description"]
+                    })
+                    
+                    reply = f"✅ Raw Video File Synced!\n\n📁 {meta['display_name']}\n\nConverted and added to Stremio with official cinematic posters!"
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
+                    continue
+                
+                # 🎬 INTERCEPT TEXT STREAM LINKS (StreamVault Pro)
+                if "http" in text_content or "Stream Link" in text_content:
+                    urls = re.findall(r'(https?://\S+)', text_content)
+                    stream_urls = [u for u in urls if "stream" in u or "dl" in u or "vault" in u]
+                    final_url = stream_urls[0] if stream_urls else (urls[0] if urls else None)
+                    
+                    if final_url:
+                        file_name = "Extracted Stream Source Link"
+                        name_match = re.search(r'File:\s*(.*)', text_content, re.IGNORECASE)
+                        if name_match:
+                            file_name = name_match.group(1).split("\n")[0].strip()
+                        else:
+                            first_line = text_content.split("\n")[0]
+                            if len(first_line) > 5:
+                                file_name = first_line.strip()
+                        
+                        meta = fetch_movie_metadata(file_name)
+                        streams_col.insert_one({
+                            "file_name": meta["display_name"],
+                            "tg_url": final_url,
+                            "imdb_id": meta["imdb_id"],
+                            "poster": meta["poster"],
+                            "description": meta["description"]
+                        })
+                        
+                        reply = f"✅ Automated Sync Complete!\n\n📁 {meta['display_name']}\n\nhas been pushed to Stremio with poster configuration!"
+                        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
             
-        live_stream_url = f"{render_domain}/watch/{file_id}"
-        meta = fetch_movie_poster(file_name)
-        
-        streams_col.insert_one({
-            "file_name": meta["display_name"],
-            "tg_url": live_stream_url,
-            "file_id": file_id,
-            "file_size": file_size,
-            "imdb_id": meta["imdb_id"],
-            "poster": meta["poster"],
-            "description": meta["description"]
-        })
-        await message.reply_text(f"✅ Raw File Stream Engaged!\n\n📁 {meta['display_name']}\n\nConverted and added to Stremio with official posters.")
+            if not results:
+                time.sleep(1)
+        except Exception:
+            time.sleep(2)
 
-# 📡 3. STREMIO NETWORK LIFECYCLE CONTROLLERS
+# 📡 2. STREMIO LAYER ROUTER SYSTEM
 async def manifest_route(request):
     return web.json_response({
         "id": "org.deepsstremio.telegram",
         "version": "4.0.0",
         "name": "Telegram Library",
-        "description": "Instant high-speed player streaming from your bot storage data cells.",
+        "description": "Instant cloud video playback engine.",
         "resources": ["catalog", "meta", "stream"],
         "types": ["movie"],
         "catalogs": [{"type": "movie", "id": "tg_catalog", "name": "Telegram Library"}]
@@ -144,13 +180,12 @@ async def catalog_route(request):
                 "description": doc.get("description")
             })
     except Exception as e:
-        print(f"🔴 Catalog compilation warning: {e}", flush=True)
+        print(f"🔴 Catalog Error: {e}", flush=True)
     return web.json_response({"metas": metas}, headers={"Access-Control-Allow-Origin": "*"})
 
 async def meta_route(request):
     raw_id = request.match_info['id'].replace(".json", "").split(":")[-1]
     try:
-        # If it's a native IMDb ID, delegate the heavy rendering layout directly to Stremio
         if raw_id.startswith("tt"):
             res = requests.get(f"https://v3-cinemeta.strem.io/meta/movie/{raw_id}.json", timeout=5).json()
             return web.json_response(res, headers={"Access-Control-Allow-Origin": "*"})
@@ -173,7 +208,6 @@ async def stream_route(request):
     raw_id = request.match_info['id'].replace(".json", "").split(":")[-1]
     streams = []
     try:
-        # Look up match based on either IMDb ID format or custom MongoDB string reference
         doc = streams_col.find_one({"imdb_id": raw_id}) if raw_id.startswith("tt") else None
         if not doc:
             from bson.objectid import ObjectId
@@ -181,19 +215,18 @@ async def stream_route(request):
                 doc = streams_col.find_one({"_id": ObjectId(raw_id)})
             except:
                 pass
-                
         if doc and "tg_url" in doc:
             streams.append({"title": "🎬 Play Stream Live", "url": doc["tg_url"]})
     except Exception as e:
-        print(f"🔴 Processing stream lookup error: {e}", flush=True)
+        print(f"🔴 Stream Error: {e}", flush=True)
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ 4. LIVE CHUNK TUNNEL STREAM ENGINE
+# ⚡ 3. LIVE CHUNK STORAGE PROXIER (Feeds multi-gigabyte video files to Stremio instantly)
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
     file_size = doc["file_size"] if doc else None
-    file_name = doc["file_name"] if doc else "video.mkv"
+    file_name = doc["file_name"] if doc else "stream.mkv"
     
     headers = {"Content-Type": "video/mp4", "Access-Control-Allow-Origin": "*"}
     if file_size:
@@ -203,14 +236,12 @@ async def watch_route(request):
     response = web.StreamResponse(status=200, headers=headers)
     await response.prepare(request)
     try:
-        # Feeds the stream directly from Telegram cloud data centers to your player
         async for chunk in tg_client.stream_media(file_id):
             await response.write(chunk)
     except Exception:
         pass
     return response
 
-# Combined Single-Loop Framework Engine
 async def main():
     app = web.Application()
     app.router.add_get('/', manifest_route)
@@ -223,10 +254,14 @@ async def main():
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
-    print(f"🟢 Web Addon proxy hosting on port {PORT}", flush=True)
+    print(f"🟢 Stremio Core Router active on port {PORT}", flush=True)
     
     await tg_client.start()
-    print("🟢 HIGH-SPEED TELEGRAM ROUTER ONLINE AND CONNECTED", flush=True)
+    print("🟢 MTProto Streaming Tunnel connected successfully!", flush=True)
+    
+    # Spawn the robust HTTP long polling loop inside a persistent background asset thread
+    threading.Thread(target=telegram_polling_loop, daemon=True).start()
+    
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
