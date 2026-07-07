@@ -36,12 +36,12 @@ except Exception:
 
 from pyrogram import Client, filters
 
-# Initialize MTProto Streaming Client with API keys
+# Initialize MTProto Client securely
 if SESSION_STRING:
-    print("🚀 UNTHROTTLED MODE: User String Session Detected!", flush=True)
+    print("🚀 UNTHROTTLED MODE: User String Session Detected! Bypassing Bot Speed Limits.", flush=True)
     tg_client = Client("stremio_session", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 else:
-    print("⚠️ BOT MODE: Running via Bot Token.", flush=True)
+    print("⚠️ BOT MODE: Running via Bot Token. (Provide SESSION_STRING for unthrottled 4K speed)", flush=True)
     tg_client = Client("stremio_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # 🎬 AUTOMATED METADATA SCRAPER
@@ -125,7 +125,6 @@ def telegram_polling_loop():
                     continue
                 msg = update["message"]
                 chat_id = msg["chat"]["id"]
-                message_id = msg["message_id"]
                 text_content = msg.get("text", "") or msg.get("caption", "") or ""
                 
                 if text_content.startswith("/start"):
@@ -152,8 +151,6 @@ def telegram_polling_loop():
                         "tg_url": live_stream_url,
                         "file_id": file_id,
                         "file_size": file_size,
-                        "chat_id": chat_id,
-                        "message_id": message_id,
                         "imdb_id": meta["imdb_id"],
                         "poster": meta["poster"],
                         "description": meta["description"],
@@ -289,7 +286,7 @@ async def stream_route(request):
         print(f"🔴 Stream Routing Error: {e}", flush=True)
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ LIVE MULTI-CHUNK PACKET TUNNEL PIPELINE
+# ⚡ LIVE DIRECT CLOUD TUNNEL STREAM ROUTER
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
@@ -299,8 +296,6 @@ async def watch_route(request):
         
     file_size = doc.get("file_size")
     file_name = doc.get("file_name", "stream.mkv")
-    chat_id = doc.get("chat_id")
-    message_id = doc.get("message_id")
     
     headers = {
         "Content-Type": "video/mp4",
@@ -318,12 +313,10 @@ async def watch_route(request):
     
     try:
         buffer = bytearray()
-        buffer_target_size = 2 * 1024 * 1024  # 2MB High-Speed Aggregation
+        buffer_target_size = 2 * 1024 * 1024  # 2MB High-Speed Performance Buffer
         
-        # Pull the clean message containing original media bytes straight from Telegram
-        message = await tg_client.get_messages(chat_id, message_id)
-        
-        async for chunk in tg_client.stream_media(message):
+        # Stream the raw file string directly from Telegram core servers
+        async for chunk in tg_client.stream_media(file_id):
             buffer.extend(chunk)
             if len(buffer) >= buffer_target_size:
                 await response.write(buffer)
@@ -331,7 +324,7 @@ async def watch_route(request):
         if buffer:
             await response.write(buffer)
     except Exception as e:
-        print(f"🔴 Video streaming connection interrupted: {e}", flush=True)
+        print(f"🔴 Video streaming connection closed: {e}", flush=True)
     return response
 
 async def main():
