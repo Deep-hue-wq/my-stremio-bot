@@ -19,10 +19,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MONGO_URI = os.getenv("MONGO_URI1", "").strip()
 API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
-SESSION_STRING = os.getenv("SESSION_STRING", "").strip()  # Optional: Paste a User Session String here for unthrottled speed
+SESSION_STRING = os.getenv("SESSION_STRING", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-print("\n=== MASTER CORE: MULTI-CLASSIFICATION SPEED ENGINE ONLINE ===", flush=True)
+print("\n=== MASTER CORE: PRODUCTION SPEED ENGINE ONLINE ===", flush=True)
 
 # Connect Secure Database Storage
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
@@ -36,21 +36,20 @@ except Exception:
 
 from pyrogram import Client, filters
 
-# ⚡ UNTHROTTLED GOD-SPEED GATEWAY: Swaps from Throttled Bot Token to Unthrottled User Account if present
+# Initialize MTProto Streaming Client with API keys
 if SESSION_STRING:
-    print("🚀 UNTHROTTLED MODE: User String Session Detected! Bypassing Bot Speed Limits.", flush=True)
-    tg_client = Client("stremio_session", session_string=SESSION_STRING)
+    print("🚀 UNTHROTTLED MODE: User String Session Detected!", flush=True)
+    tg_client = Client("stremio_session", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 else:
-    print("⚠️ BOT MODE: Running via Bot Token. (For premium 4K unthrottled speed, generate a SESSION_STRING variable)", flush=True)
+    print("⚠️ BOT MODE: Running via Bot Token.", flush=True)
     tg_client = Client("stremio_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# 🎬 ADVANCED MEDIA CLASSIFIER & METADATA PARSER
+# 🎬 AUTOMATED METADATA SCRAPER
 def parse_and_fetch_metadata(raw_title):
     try:
         clean = re.sub(r'\.(mkv|mp4|avi|mov|webm)$', '', raw_title, flags=re.IGNORECASE)
         clean = clean.replace('.', ' ').replace('_', ' ')
         
-        # Determine if file is a Series episode (detecting S01E01, Season 1, Ep 2 formats)
         is_series = False
         season = 1
         episode = 1
@@ -71,18 +70,15 @@ def parse_and_fetch_metadata(raw_title):
                 if sea_match:
                     season = int(sea_match.group(1))
 
-        # Strip standard video metadata noise
         clean = re.sub(r'(1080p|720p|2160p|4k|bluray|hdrip|web\s*dl|brrip|x264|x265|hevc|aac|hindi|english|yts|mx|s\d+e\d+|season\s*\d+|episode\s*\d+|ep\s*\d+).*', '', clean, flags=re.IGNORECASE)
         clean_query = clean.strip()
         
-        # If fallback cleaning leaves nothing, salvage the original text
         if len(clean_query) < 2:
             clean_query = raw_title[:30]
 
         encoded_query = urllib.parse.quote(clean_query)
         media_type = "series" if is_series else "movie"
         
-        # Query the correct corresponding database catalog
         res = requests.get(f"https://v3-cinemeta.strem.io/catalog/{media_type}/top/search={encoded_query}.json", timeout=5).json()
         metas = res.get("metas", [])
         
@@ -129,6 +125,7 @@ def telegram_polling_loop():
                     continue
                 msg = update["message"]
                 chat_id = msg["chat"]["id"]
+                message_id = msg["message_id"]
                 text_content = msg.get("text", "") or msg.get("caption", "") or ""
                 
                 if text_content.startswith("/start"):
@@ -155,6 +152,8 @@ def telegram_polling_loop():
                         "tg_url": live_stream_url,
                         "file_id": file_id,
                         "file_size": file_size,
+                        "chat_id": chat_id,
+                        "message_id": message_id,
                         "imdb_id": meta["imdb_id"],
                         "poster": meta["poster"],
                         "description": meta["description"],
@@ -215,7 +214,6 @@ async def catalog_route(request):
     req_type = request.match_info['type']
     metas = []
     try:
-        # Dynamically filters items by requested catalog type (movie vs series)
         for doc in streams_col.find({"type": req_type}).sort("_id", -1).limit(100):
             item_id = doc.get("imdb_id") if doc.get("imdb_id") else f"tg_custom_{str(doc['_id'])}"
             metas.append({
@@ -234,11 +232,9 @@ async def meta_route(request):
     raw_id = request.match_info['id'].replace(".json", "").split(":")[-1]
     try:
         if raw_id.startswith("tt"):
-            # Fetch structural description directly from Stremio Cinemeta mirrors
             res = requests.get(f"https://v3-cinemeta.strem.io/meta/{req_type}/{raw_id}.json", timeout=5).json()
             meta_data = res.get("meta", {})
             
-            # If a Series is requested, append the custom streaming episodes structure to the layout
             if req_type == "series" and meta_data:
                 db_eps = streams_col.find({"imdb_id": raw_id, "type": "series"})
                 episodes_list = []
@@ -271,15 +267,13 @@ async def meta_route(request):
 
 async def stream_route(request):
     raw_id = request.match_info['id'].replace(".json", "")
-    
-    # Handle both movie IDs and segmented series formats (imdb:season:episode)
     parts = raw_id.split(":")
     imdb_id = parts[0]
     
     streams = []
     try:
         query = {"imdb_id": imdb_id}
-        if len(parts) == 3:  # If it matches a series format
+        if len(parts) == 3:
             query["season"] = int(parts[1])
             query["episode"] = int(parts[2])
             
@@ -295,23 +289,19 @@ async def stream_route(request):
         print(f"🔴 Stream Routing Error: {e}", flush=True)
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ LIVE MULTI-CHUNK DATA TRANSFERRED HOOK
+# ⚡ LIVE MULTI-CHUNK PACKET TUNNEL PIPELINE
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
-    file_size = doc["file_size"] if doc else None
-    file_name = doc["file_name"] if doc else "stream.mkv"
     
-    range_header = request.headers.get("Range", "")
-    start_byte = 0
-    if range_header and "bytes=" in range_header:
-        try: start_byte = int(range_header.split("bytes=")[1].split("-")[0])
-        except: start_byte = 0
-
-    chunk_size = 1024 * 1024
-    offset_chunks = start_byte // chunk_size
+    if not doc:
+        return web.Response(status=404, text="Media data entity not indexed.")
+        
+    file_size = doc.get("file_size")
+    file_name = doc.get("file_name", "stream.mkv")
+    chat_id = doc.get("chat_id")
+    message_id = doc.get("message_id")
     
-    status = 206 if start_byte > 0 else 200
     headers = {
         "Content-Type": "video/mp4",
         "Access-Control-Allow-Origin": "*",
@@ -321,28 +311,27 @@ async def watch_route(request):
     
     if file_size:
         headers["Content-Disposition"] = f'inline; filename="{file_name}"'
-        if start_byte > 0:
-            headers["Content-Range"] = f"bytes {start_byte}-{file_size-1}/{file_size}"
-            headers["Content-Length"] = str(file_size - start_byte)
-        else:
-            headers["Content-Length"] = str(file_size)
+        headers["Content-Length"] = str(file_size)
             
-    response = web.StreamResponse(status=status, headers=headers)
+    response = web.StreamResponse(status=200, headers=headers)
     await response.prepare(request)
     
     try:
         buffer = bytearray()
-        buffer_target_size = 2 * 1024 * 1024  # Increased to 2MB aggregation blocks for faster 4K transfer
+        buffer_target_size = 2 * 1024 * 1024  # 2MB High-Speed Aggregation
         
-        async for chunk in tg_client.stream_media(file_id, offset=offset_chunks):
+        # Pull the clean message containing original media bytes straight from Telegram
+        message = await tg_client.get_messages(chat_id, message_id)
+        
+        async for chunk in tg_client.stream_media(message):
             buffer.extend(chunk)
             if len(buffer) >= buffer_target_size:
                 await response.write(buffer)
                 buffer = bytearray()
         if buffer:
             await response.write(buffer)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"🔴 Video streaming connection interrupted: {e}", flush=True)
     return response
 
 async def main():
