@@ -21,24 +21,21 @@ API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-print("\n=== HYBRID CORE: HIGH-SPEED MEDIA PROTOCOL ONLINE ===", flush=True)
+print("\n=== PERFORMANCE ENGINE: PACKET AGGREGATION ONLINE ===", flush=True)
 
 # Connect Secure Database Storage
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
 db = client.stremio_bridge
 streams_col = db.streams
 
-# Forcefully wipe any stuck webhook hooks on Telegram routing databases
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
 except Exception:
     pass
 
-# Initialize MTProto Streaming Asset (Imported safely after loop generation)
 from pyrogram import Client, filters
 tg_client = Client("stremio_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# 🎬 CINEMATIC POSTER MATCH ENGINE: Automatically queries Stremio's database for official artwork
 def fetch_movie_metadata(raw_title):
     try:
         clean = re.sub(r'\.(mkv|mp4|avi|mov|webm)$', '', raw_title, flags=re.IGNORECASE)
@@ -65,7 +62,6 @@ def fetch_movie_metadata(raw_title):
         "description": "Cloud Stream Layout Loaded Successfully"
     }
 
-# 📡 1. BULLETPROOF NATIVE HTTP TELEGRAM ENGINE (Immune to Python 3.14 deadlocks)
 def telegram_polling_loop():
     print("🟢 TELEGRAM DETECTION LOOP: ACTIVE AND SCANNING", flush=True)
     offset = 0
@@ -79,22 +75,19 @@ def telegram_polling_loop():
                 
             response = req.json()
             results = response.get("result", [])
-            
             for update in results:
                 offset = update["update_id"] + 1
                 if "message" not in update:
                     continue
                 msg = update["message"]
                 chat_id = msg["chat"]["id"]
-                
                 text_content = msg.get("text", "") or msg.get("caption", "") or ""
                 
                 if text_content.startswith("/start"):
-                    reply = "🟢 High-Speed Extraction Engine Active!\n\n• Forward link text blocks to sync them.\n• Forward raw media files directly to play them with full poster matching!"
+                    reply = "🟢 High-Speed Extraction Engine Active!\n\nForward movie text links or raw media files here to sync them instantly."
                     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
                     continue
                 
-                # 🚀 INTERCEPT RAW VIDEO ATTACHMENTS (Lucy / FiLE Ai items)
                 media = msg.get("video") or msg.get("document")
                 if media and ("video" in media.get("mime_type", "") or media.get("file_name", "").endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))):
                     file_id = media.get("file_id")
@@ -122,12 +115,10 @@ def telegram_polling_loop():
                     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
                     continue
                 
-                # 🎬 INTERCEPT TEXT STREAM LINKS (StreamVault Pro)
                 if "http" in text_content or "Stream Link" in text_content:
                     urls = re.findall(r'(https?://\S+)', text_content)
                     stream_urls = [u for u in urls if "stream" in u or "dl" in u or "vault" in u]
                     final_url = stream_urls[0] if stream_urls else (urls[0] if urls else None)
-                    
                     if final_url:
                         file_name = "Extracted Stream Source Link"
                         name_match = re.search(r'File:\s*(.*)', text_content, re.IGNORECASE)
@@ -146,22 +137,19 @@ def telegram_polling_loop():
                             "poster": meta["poster"],
                             "description": meta["description"]
                         })
-                        
                         reply = f"✅ Automated Sync Complete!\n\n📁 {meta['display_name']}\n\nhas been pushed to Stremio with poster configuration!"
                         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
-            
             if not results:
                 time.sleep(1)
         except Exception:
             time.sleep(2)
 
-# 📡 2. STREMIO LAYER ROUTER SYSTEM
 async def manifest_route(request):
     return web.json_response({
         "id": "org.deepsstremio.telegram",
-        "version": "4.0.0",
+        "version": "4.1.0",
         "name": "Telegram Library",
-        "description": "Instant cloud video playback engine.",
+        "description": "Instant high-speed video streaming engine.",
         "resources": ["catalog", "meta", "stream"],
         "types": ["movie"],
         "catalogs": [{"type": "movie", "id": "tg_catalog", "name": "Telegram Library"}]
@@ -189,7 +177,6 @@ async def meta_route(request):
         if raw_id.startswith("tt"):
             res = requests.get(f"https://v3-cinemeta.strem.io/meta/movie/{raw_id}.json", timeout=5).json()
             return web.json_response(res, headers={"Access-Control-Allow-Origin": "*"})
-        
         from bson.objectid import ObjectId
         doc = streams_col.find_one({"_id": ObjectId(raw_id)})
         if doc:
@@ -211,34 +198,28 @@ async def stream_route(request):
         doc = streams_col.find_one({"imdb_id": raw_id}) if raw_id.startswith("tt") else None
         if not doc:
             from bson.objectid import ObjectId
-            try:
-                doc = streams_col.find_one({"_id": ObjectId(raw_id)})
-            except:
-                pass
+            try: doc = streams_col.find_one({"_id": ObjectId(raw_id)})
+            except: pass
         if doc and "tg_url" in doc:
             streams.append({"title": "🎬 Play Stream Live", "url": doc["tg_url"]})
     except Exception as e:
         print(f"🔴 Stream Error: {e}", flush=True)
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ 3. LIVE SEEK-AWARE TUNNEL STREAM ROUTER (Supports instant timeline fast-forwarding)
+# ⚡ UPGRADED HIGH-SPEED AGGREGATION ROUTER
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
     file_size = doc["file_size"] if doc else None
     file_name = doc["file_name"] if doc else "stream.mkv"
     
-    # Check for HTTP Range headers from Stremio to calculate timeline position
     range_header = request.headers.get("Range", "")
     start_byte = 0
     if range_header and "bytes=" in range_header:
-        try:
-            start_byte = int(range_header.split("bytes=")[1].split("-")[0])
-        except Exception:
-            start_byte = 0
+        try: start_byte = int(range_header.split("bytes=")[1].split("-")[0])
+        except: start_byte = 0
 
-    # Telegram/Pyrogram chunk partition index is 1 MiB (1,048,576 bytes)
-    chunk_size = 1024 * 1024
+    chunk_size = 1024 * 1024  # Pyrogram chunk step mapping
     offset_chunks = start_byte // chunk_size
     
     status = 206 if start_byte > 0 else 200
@@ -246,7 +227,7 @@ async def watch_route(request):
         "Content-Type": "video/mp4",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "*",
-        "Accept-Ranges": "bytes"  # Crucial: Unlocks scrubbing timelines on player
+        "Accept-Ranges": "bytes"
     }
     
     if file_size:
@@ -261,9 +242,18 @@ async def watch_route(request):
     await response.prepare(request)
     
     try:
-        # Request data pipeline starting directly from the skipped block location offset
+        # 🚀 HIGH-SPEED TRANSMISSION MEMORY ACCUMULATOR
+        buffer = bytearray()
+        buffer_target_size = 1024 * 1024  # 1 MegaByte aggregation blocks
+        
         async for chunk in tg_client.stream_media(file_id, offset=offset_chunks):
-            await response.write(chunk)
+            buffer.extend(chunk)
+            if len(buffer) >= buffer_target_size:
+                await response.write(buffer)
+                buffer = bytearray()  # Flush and clean memory block instantly
+                
+        if buffer:
+            await response.write(buffer)
     except Exception:
         pass
     return response
