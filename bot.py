@@ -1,5 +1,5 @@
 import asyncio
-# 🛡️ EVENT LOOP INTEGRITY PATCH: Secures the asynchronous environment for Python 3.14 immediately
+# 🛡️ SYSTEM INTEGRITY FIX: Force-initialize the event loop environment for Python 3.14 immediately
 try:
     asyncio.get_event_loop()
 except RuntimeError:
@@ -9,8 +9,6 @@ import os
 import re
 import urllib.parse
 import requests
-import random
-import string
 from aiohttp import web
 from pymongo import MongoClient
 from pyrogram import Client, filters
@@ -21,28 +19,27 @@ API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-print("\n=== SYSTEM MASTER ENGINE: RESETTING CONNECTION CORES ===", flush=True)
+print("\n=== SYSTEM MASTER ENGINE: IN-MEMORY HYBRID PRODUCTION CORES ===", flush=True)
 
+# 🧹 Clear any stuck webhooks on Telegram's servers before booting
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
-    print("🧹 Webhook cache successfully cleared!", flush=True)
+    print("🧹 Telegram server webhook cache successfully cleared!", flush=True)
 except Exception:
     pass
 
 # Connect Database Storage Grid
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
 streams_col = client.stremio_bridge.streams
-print("🟢 MONGO DATABASE GRID: CONNECTED CONNECTED", flush=True)
+print("🟢 MONGO DATABASE GRID: CONNECTED SUCCESSFULLY", flush=True)
 
-# 🔒 SESSION ISOLATION WALL: Generates a completely unique session on every boot to prevent file locks
-random_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
-session_name = f"stremio_tunnel_{random_suffix}"
-
+# 🔒 SOLID RAM STORAGE INITIALIZATION: Prevents disk write-locks on Render containers completely
 tg_client = Client(
-    session_name, 
+    "stremio_fixed_session", 
     api_id=API_ID, 
     api_hash=API_HASH, 
-    bot_token=BOT_TOKEN
+    bot_token=BOT_TOKEN,
+    in_memory=True
 )
 
 # 🎬 AUTOMATED SERVICING & CLASSIFICATION ENGINE
@@ -83,17 +80,19 @@ def parse_metadata(raw_title):
     return {
         "imdb_id": None, "name": raw_title, "type": "movie", "s": 1, "e": 1,
         "poster": "https://images.slideteam.net/wp-content/uploads/2016/11/04/Video-player-icon-graphic-design-PowerPoint-Templates-Slide-1.jpg", 
-        "desc": "Synced Media File"
+        "desc": "Cloud Stream Synced File"
     }
 
-# 📥 TELEGRAM CHAT LISTENER ENGINE (Protected with full error logging)
+# 📥 TELEGRAM CHAT LISTENER ENGINE (Robust, plain text response prevents message drops)
 @tg_client.on_message(filters.all)
 async def incoming_handler(client, message):
     try:
         text_content = message.text or message.caption or ""
+        chat_id = message.chat.id
+        message_id = message.id
         
         if text_content.startswith("/start"):
-            await message.reply_text("🟢 Proxy Link Engine Active!\n\nForward movie text link blocks or raw video files directly here.")
+            await message.reply_text("🟢 System Active!\n\n• Forward raw movie files directly here.\n• Forward video link blocks to sync posters automatically.")
             return
 
         # Process Raw Video Message Files
@@ -111,10 +110,10 @@ async def incoming_handler(client, message):
                 "file_name": meta["name"], "tg_url": live_stream_url,
                 "file_id": file_id, "file_size": media.file_size, "imdb_id": meta["imdb_id"],
                 "poster": meta["poster"], "description": meta["desc"],
-                "type": meta["type"], "season": meta["s"], "episode": meta["e"]
+                "type": meta["type"], "season": meta["s"], "episode": meta["e"],
+                "chat_id": chat_id, "message_id": message_id
             })
             
-            # Pure plain text to prevent markdown entity parsing failures
             reply = (
                 "✅ Video Successfully Processed!\n\n"
                 f"📁 File: {meta['name']}\n"
@@ -149,12 +148,12 @@ async def incoming_handler(client, message):
                 )
                 await message.reply_text(reply)
     except Exception as e:
-        print(f"🔴 Message parsing catch: {e}", flush=True)
+        print(f"🔴 Chat parsing exception note: {e}", flush=True)
 
 # 📡 STREMIO SYSTEM PACKET CORES
 async def manifest_route(request):
     return web.json_response({
-        "id": "org.deepsstremio.telegram", "version": "6.5.0", "name": "Telegram Library",
+        "id": "org.deepsstremio.telegram", "version": "6.6.0", "name": "Telegram Library",
         "description": "Stable streaming proxy tunnel with absolute scrubbing mechanics.",
         "resources": ["catalog", "meta", "stream"], "types": ["movie", "series"],
         "catalogs": [{"type": "movie", "id": "tg_movie", "name": "Telegram Library"},
@@ -192,13 +191,16 @@ async def stream_route(request):
         
     return web.json_response({"streams": [{"title": f"🎬 Play Stream Natively", "url": doc["tg_url"]}]} if doc and "tg_url" in doc else {"streams": []}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ LIVE ROBUST TELEGRAM BUFFER TUNNEL
+# ⚡ UPGRADED TIMELINE-AWARE VIDEO STREAMER
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
     if not doc: return web.Response(status=404)
         
     file_size = doc.get("file_size", 0)
+    chat_id = doc.get("chat_id")
+    message_id = doc.get("message_id")
+    
     start_byte = 0
     if range_header := request.headers.get("Range", ""):
         try: start_byte = int(range_header.split("bytes=")[1].split("-")[0])
@@ -215,18 +217,37 @@ async def watch_route(request):
     await response.prepare(request)
     
     try:
-        # Check if client has stream_media or download_media chunk streaming attributes natively
-        if hasattr(tg_client, "stream_media"):
-            async for chunk in tg_client.stream_media(file_id, offset=(start_byte // (1024*1024))):
-                await response.write(chunk)
-        else:
-            async for chunk in tg_client.download_media(file_id, chunks=True, offset=start_byte):
-                await response.write(chunk)
-    except Exception:
-        pass
+        # Retrieve message object directly via bot layer context permissions
+        message = await tg_client.get_messages(chat_id, message_id)
+        
+        current_position = 0
+        buffer = bytearray()
+        buffer_target = 2 * 1024 * 1024  # 2MB High-Speed Performance Buffer
+        
+        async for chunk in tg_client.stream_media(message):
+            chunk_len = len(chunk)
+            if current_position + chunk_len <= start_byte:
+                current_position += chunk_len
+                continue
+                
+            if current_position < start_byte:
+                skip_bytes = start_byte - current_position
+                chunk = chunk[skip_bytes:]
+                current_position = start_byte
+                
+            buffer.extend(chunk)
+            if len(buffer) >= buffer_target:
+                await response.write(buffer)
+                buffer = bytearray()
+            current_position += len(chunk)
+            
+        if buffer:
+            await response.write(buffer)
+    except Exception as e:
+        print(f"🔴 Stream transfer interrupted: {e}", flush=True)
     return response
 
-# 🚀 SYSTEM STARTER ENGINE
+# 🚀 SYSTEM CONTAINER LIFECYCLE INITIALIZER
 async def main():
     app = web.Application(client_max_size=0)
     app.router.add_get('/', manifest_route)
@@ -241,7 +262,7 @@ async def main():
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     print(f"🟢 Stremio Core Router active on port {PORT}", flush=True)
     
-    print("🟢 Initializing connection to Telegram Core via Isolated Token profile...", flush=True)
+    print("🟢 Initializing connection to Telegram Core via Isolated RAM profile...", flush=True)
     await tg_client.start()
     print("🟢 TELEGRAM INCOMING PIPELINE ACTIVE: Listening for updates now!", flush=True)
     await asyncio.Event().wait()
