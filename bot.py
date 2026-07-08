@@ -19,7 +19,7 @@ API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-print("\n=== SYSTEM MASTER ENGINE: HTTPS LINK EXPEDITOR ACTIVE ===", flush=True)
+print("\n=== SYSTEM MASTER ENGINE: STRICT BOT PIPELINE ACTIVE ===", flush=True)
 
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
@@ -30,8 +30,14 @@ except Exception:
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
 streams_col = client.stremio_bridge.streams
 
-# Initialize Unified Pyrogram Client
-tg_client = Client("stremio_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# 🔒 FORCE STRICT BOT INITIALIZATION: Completely bypasses terminal session prompts
+tg_client = Client(
+    "stremio_bot_session", 
+    api_id=API_ID, 
+    api_hash=API_HASH, 
+    bot_token=BOT_TOKEN,
+    in_memory=True  # Prevents storage file locking conflicts on Render's container tier
+)
 
 # 🎬 AUTOMATED SERVICING & CLASSIFICATION ENGINE
 def parse_metadata(raw_title):
@@ -74,7 +80,7 @@ def parse_metadata(raw_title):
         "desc": "Synced Media File"
     }
 
-# 📥 TELEGRAM CHAT LISTENER ENGINE
+# 📥 TELEGRAM CHAT LISTENER ENGINE (Now bound directly to the bot instance)
 @tg_client.on_message(filters.text | filters.document | filters.video | filters.caption)
 async def incoming_handler(client, message):
     text_content = message.text or message.caption or ""
@@ -101,7 +107,6 @@ async def incoming_handler(client, message):
             "type": meta["type"], "season": meta["s"], "episode": meta["e"]
         })
         
-        # ⚡ EXPEDITED DIALOGUE: Automatically delivers the clickable HTTPS playback link
         reply = (
             f"✅ **Raw Video File Stream Engaged!**\n\n"
             f"📁 **File:** {meta['name']}\n"
@@ -109,7 +114,7 @@ async def incoming_handler(client, message):
             f"🚀 **Direct HTTPS Playback Link:**\n`{live_stream_url}`\n\n"
             f"☝️ _Click the link to copy it. You can paste it directly into VLC, MX Player, or your browser layout to watch instantly!_"
         )
-        await message.reply_text(reply, parse_mode=pyrogram.enums.ParseMode.MARKDOWN)
+        await message.reply_text(reply)
         return
 
     # Process Link Message Blocks
@@ -134,7 +139,7 @@ async def incoming_handler(client, message):
                 f"🔗 **Direct HTTPS Playback Link:**\n`{final_url}`\n\n"
                 f"☝️ _Click to copy. Ready for high-speed streaming layout rendering._"
             )
-            await message.reply_text(reply, parse_mode=pyrogram.enums.ParseMode.MARKDOWN)
+            await message.reply_text(reply)
 
 # 📡 STREMIO SYSTEM PACKET CORES
 async def manifest_route(request):
@@ -219,10 +224,12 @@ async def main():
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
+    print(f"🟢 Stremio Core Router active on port {PORT}", flush=True)
     
-    print("🟢 Initializing core connection bridge layers...", flush=True)
+    print("🟢 Initializing connection to Telegram Core via Bot Profile...", flush=True)
     await tg_client.start()
-    print("🟢 PROXIER ACTIVE: Cloud streams ready to deploy natively.", flush=True)
+    print("🟢 TELEGRAM INCOMING PIPELINE ACTIVE: Bot is monitoring messages!", flush=True)
+    
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
