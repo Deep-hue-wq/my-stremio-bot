@@ -14,6 +14,9 @@ import threading
 from aiohttp import web
 from pymongo import MongoClient
 from pyrogram import Client
+from pyrogram.file_id import FileId
+from pyrogram.raw.functions.upload import GetFile
+from pyrogram.raw.types import InputDocumentFileLocation
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MONGO_URI = os.getenv("MONGO_URI1", "").strip()
@@ -21,7 +24,7 @@ API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-print("\n=== SYSTEM ONLINE: STANDALONE BOT TIER ACTIVATED ===", flush=True)
+print("\n=== SYSTEM CORE: SNAP-SEEK RANGE CONTROLLER ONLINE ===", flush=True)
 
 # Connect Database Storage Grid
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
@@ -31,14 +34,14 @@ print("🟢 MONGO DATABASE: CONNECTED SUCCESSFULLY", flush=True)
 
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
-    print("🧹 Telegram server webhook cache cleared!", flush=True)
+    print("🧹 Webhook cache cleared!", flush=True)
 except Exception:
     pass
 
-# Initialize Pyrogram purely using Bot Credentials with In-Memory Session storage
-tg_client = Client("stremio_pure_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
+# Initialize Pyrogram purely as a passive asset for low-level protocol calls
+tg_client = Client("stremio_fine_wine", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
 
-# 🎬 CINEMATIC AUTOMATED METADATA SCRAPER
+# 🎬 CINEMATIC POSTER & SERIES METADATA MATCHING
 def fetch_movie_metadata(raw_title):
     try:
         clean = re.sub(r'\.(mkv|mp4|avi|mov|webm)$', '', raw_title, flags=re.IGNORECASE)
@@ -118,9 +121,10 @@ def telegram_polling_loop():
                         "file_name": meta["name"], "tg_url": live_stream_url,
                         "file_id": file_id, "file_size": file_size, "imdb_id": meta["imdb_id"],
                         "poster": meta["poster"], "description": meta["desc"],
-                        "type": meta["type"], "season": meta["s"], "episode": meta["e"]
+                        "type": meta["type"], "season": meta["s"], "episode": meta["e"],
+                        "chat_id": chat_id, "message_id": msg["message_id"]  # Saved for reference matching
                     })
-                    reply = f"✅ Video Synced as [{meta['type'].upper()}]!\n📁 {meta['name']}\n\n🚀 Direct HTTPS Playback Link:\n{live_stream_url}"
+                    reply = f"✅ Raw File Synced as [{meta['type'].upper()}]!\n📁 {meta['name']} " + (f"(S{meta['s']}E{meta['e']})" if meta['type'] == 'series' else "")
                     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
                     continue
 
@@ -138,18 +142,18 @@ def telegram_polling_loop():
                             "poster": meta["poster"], "description": meta["desc"],
                             "type": meta["type"], "season": meta["s"], "episode": meta["e"]
                         })
-                        reply = f"✅ Link Synced as [{meta['type'].upper()}]!\n📁 {meta['name']}\n\n🚀 Direct HTTPS Playback Link:\n{final_url}"
+                        reply = f"✅ Link Synced as [{meta['type'].upper()}]!\n📁 {meta['name']}"
                         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
             if not results:
                 time.sleep(1)
         except Exception:
             time.sleep(2)
 
-# 📡 STREMIO PLATFORM INTERFACE ENDPOINTS
+# 📡 STREMIO PLATFORM SPECIFICATION ROUTERS
 async def manifest_route(request):
     return web.json_response({
-        "id": "org.deepsstremio.telegram", "version": "7.0.0", "name": "Telegram Library",
-        "description": "Stable streaming proxy tunnel with automated metadata classification.",
+        "id": "org.deepsstremio.telegram", "version": "7.5.0", "name": "Telegram Library",
+        "description": "Original stable streaming proxy tunnel with instant MTProto seek optimization.",
         "resources": ["catalog", "meta", "stream"], "types": ["movie", "series"],
         "catalogs": [{"type": "movie", "id": "tg_movie", "name": "Telegram Library"},
                      {"type": "series", "id": "tg_series", "name": "Telegram Library"}]
@@ -184,12 +188,15 @@ async def stream_route(request):
         except: pass
     return web.json_response({"streams": [{"title": f"🎬 Play Stream Natively", "url": doc["tg_url"]}]} if doc and "tg_url" in doc else {"streams": []}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ MEMORY-SAFE DATA TUNNEL ROUTER
+# ⚡ THE UNTHROTTLED MTPROTO TARGET SEEKER (Fulfills Range Requests instantly)
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
     if not doc: return web.Response(status=404)
+    
     file_size = doc.get("file_size", 0)
+    chat_id = doc.get("chat_id")
+    message_id = doc.get("message_id")
     
     range_header = request.headers.get("Range", "")
     start_byte = 0
@@ -221,27 +228,63 @@ async def watch_route(request):
     await response.prepare(request)
     
     try:
-        # Zero-Copy Streaming: Directly pipes streaming chunks from Telegram socket out to Stremio
-        # Keeps server RAM consumption locked at a minimal baseline (around 50MB)
-        current_bytes = 0
-        async for chunk in tg_client.download_media(file_id, chunks=True):
-            chunk_len = len(chunk)
-            if current_bytes + chunk_len <= start_byte:
-                current_bytes += chunk_len
-                continue
-            if current_bytes < start_byte:
-                skip = start_byte - current_bytes
-                chunk = chunk[skip:]
-                current_bytes = start_byte
+        # Dynamically refresh the file location reference on demand
+        target_file_id = file_id
+        if chat_id and message_id:
+            try:
+                msg = await tg_client.get_messages(chat_id, message_id)
+                media = msg.video or msg.document
+                if media: target_file_id = media.file_id
+            except:
+                pass
+                
+        # Decode the location profile
+        decoded_profile = FileId.decode(target_file_id)
+        location = InputDocumentFileLocation(
+            id=decoded_profile.media_id,
+            access_hash=decoded_profile.access_hash,
+            file_reference=decoded_profile.file_reference,
+            thumb_size=""
+        )
+        
+        # Configure chunk alignment parameters (512KB chunks matched to 4096-byte blocks)
+        chunk_size = 512 * 1024
+        mtproto_offset = (start_byte // 4096) * 4096
+        skip_inside_first_chunk = start_byte - mtproto_offset
+        current_offset = mtproto_offset
+        
+        while current_offset < file_size:
+            if current_offset > end_byte:
+                break
+                
+            file_part = await tg_client.invoke(
+                GetFile(location=location, offset=current_offset, limit=chunk_size)
+            )
             
-            await response.write(chunk)
+            if not file_part or not hasattr(file_part, "bytes") or not file_part.bytes:
+                break
+                
+            data = file_part.bytes
+            
+            if current_offset == mtproto_offset and skip_inside_first_chunk > 0:
+                data = data[skip_inside_first_chunk:]
+                
+            chunk_end_pos_adjusted = (mtproto_offset + skip_inside_first_chunk + len(data)) if current_offset == mtproto_offset else (current_offset + len(data))
+            if chunk_end_pos_adjusted > end_byte + 1:
+                allowed_len = (end_byte - (current_offset + (skip_inside_first_chunk if current_offset == mtproto_offset else 0))) + 1
+                data = data[:int(allowed_len)]
+                
+            await response.write(data)
             await response.drain()
-            current_bytes += len(chunk)
+            
+            if len(data) == 0:
+                break
+            current_offset += chunk_size
     except Exception:
         pass
     return response
 
-# 🚀 SYSTEM CONTAINER ENTRYPOINT
+# 🚀 CONTAINER START ENTRYPOINT
 async def main():
     app = web.Application(client_max_size=0)
     app.router.add_get('/', manifest_route)
@@ -257,7 +300,7 @@ async def main():
     print(f"🟢 Stremio Core Router active on port {PORT}", flush=True)
     
     await tg_client.start()
-    print("🟢 Telegram Bot Instance Synced Successfully!", flush=True)
+    print("🟢 MTProto Seek Asset connected successfully!", flush=True)
     
     threading.Thread(target=telegram_polling_loop, daemon=True).start()
     await asyncio.Event().wait()
