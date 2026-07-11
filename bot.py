@@ -25,7 +25,7 @@ PORT = int(os.getenv("PORT", 10000))
 # 🔑 TMDB API KEY
 TMDB_API_KEY = "d8e9f93d8a60953c67c8756c446c72fb"
 
-print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM ACTIVE (ASYNC MULTI-THREADED) ===", flush=True)
+print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM ACTIVE (GOD-LEVEL V3) ===", flush=True)
 
 # Connect Database
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
@@ -46,7 +46,9 @@ def fetch_movie_metadata(raw_title):
         clean = clean.replace('.', ' ').replace('_', ' ')
         
         is_series, season, episode = False, 1, 1
-        series_match = re.search(r's(\d+)\s*e(\d+)', clean, re.IGNORECASE)
+        
+        # ⚡ Super-Parser for Series Formatting
+        series_match = re.search(r'(?:s|season)\s*(\d+)\s*(?:e|ep|episode)\s*(\d+)', clean, re.IGNORECASE)
         if series_match:
             is_series, season, episode = True, int(series_match.group(1)), int(series_match.group(2))
         else:
@@ -58,6 +60,7 @@ def fetch_movie_metadata(raw_title):
                 sea_match = re.search(r'season\s*(\d+)', clean, re.IGNORECASE)
                 if sea_match: season = int(sea_match.group(1))
 
+        # Clean tags to get pure title
         clean = re.sub(r'(1080p|720p|2160p|4k|bluray|hdrip|web\s*dl|brrip|x264|x265|hevc|aac|hindi|english|yts|mx|s\d+e\d+|season\s*\d+|episode\s*\d+|ep\s*\d+).*', '', clean, flags=re.IGNORECASE)
         clean_query = clean.strip()
         if len(clean_query) < 2: clean_query = raw_title[:30]
@@ -67,25 +70,33 @@ def fetch_movie_metadata(raw_title):
 
         stremio_id, poster, desc, name = None, None, "", clean_query
 
+        # 1️⃣ CINEMETA FIRST (Guarantees Native Stremio Sync)
         try:
             cm_res = requests.get(f"https://v3-cinemeta.strem.io/catalog/{stremio_type}/top/search={urllib.parse.quote(clean_query)}.json", timeout=5).json()
             if metas := cm_res.get("metas", []):
-                stremio_id, name, poster, desc = metas[0].get("id"), metas[0].get("name"), metas[0].get("poster"), metas[0].get("description", "")
+                stremio_id = metas[0].get("id")
+                name = metas[0].get("name")
+                poster = metas[0].get("poster")
+                desc = metas[0].get("description", "")
         except Exception: pass
 
+        # 2️⃣ TMDB FALLBACK/ENHANCER
         try:
             tmdb_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={TMDB_API_KEY}&query={urllib.parse.quote(clean_query)}"
             res = requests.get(tmdb_url, timeout=5).json()
             if res.get("results"):
                 best = res["results"][0]
-                if not poster and best.get("poster_path"): poster = f"https://image.tmdb.org/t/p/w500{best.get('poster_path')}"
-                if not desc: desc = best.get("overview", "")
+                if not poster and best.get("poster_path"): 
+                    poster = f"https://image.tmdb.org/t/p/w500{best.get('poster_path')}"
+                if not desc: 
+                    desc = best.get("overview", "")
                 if not stremio_id:
                     ext_res = requests.get(f"https://api.themoviedb.org/3/{media_type}/{best.get('id')}/external_ids?api_key={TMDB_API_KEY}", timeout=5).json()
                     stremio_id = ext_res.get("imdb_id")
         except Exception: pass
             
-        if not stremio_id: stremio_id = "tg_" + hashlib.md5(name.encode()).hexdigest()[:10]
+        if not stremio_id: 
+            stremio_id = "tg_" + hashlib.md5(name.encode()).hexdigest()[:10]
 
         return {"imdb_id": stremio_id, "name": name, "poster": poster, "desc": desc, "type": stremio_type, "s": season, "e": episode}
             
@@ -118,7 +129,7 @@ def telegram_polling_loop():
                     render_domain = os.getenv("RENDER_EXTERNAL_URL", "https://my-stremio-bot-1.onrender.com").rstrip('/')
                     meta = fetch_movie_metadata(raw_name)
                     streams_col.insert_one({"file_name": meta["name"], "tg_url": f"{render_domain}/watch/{file_id}", "file_id": file_id, "file_size": file_size, "imdb_id": meta["imdb_id"], "poster": meta["poster"], "description": meta["desc"], "type": meta["type"], "season": meta["s"], "episode": meta["e"]})
-                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"✅ Synced: {meta['name']}"})
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"✅ Synced: {meta['name']} (S{meta['s']}E{meta['e']})"})
                     continue
 
                 if "http" in text_content:
@@ -128,35 +139,47 @@ def telegram_polling_loop():
                         file_name = name_match.group(1).split("\n")[0].strip() if name_match else text_content.split("\n")[0].strip()
                         meta = fetch_movie_metadata(file_name)
                         streams_col.insert_one({"file_name": meta["name"], "tg_url": final_url, "imdb_id": meta["imdb_id"], "poster": meta["poster"], "description": meta["desc"], "type": meta["type"], "season": meta["s"], "episode": meta["e"]})
-                        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"✅ Link Synced: {meta['name']}"})
+                        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"✅ Link Synced: {meta['name']} (S{meta['s']}E{meta['e']})"})
             if not req.json().get("result", []): time.sleep(1)
         except Exception: time.sleep(2)
 
 async def manifest_route(request):
     return web.json_response({
-        "id": "org.deepsstremio.telegram", "version": "10.0.0", "name": "Telegram Library",
+        "id": "org.deepsstremio.telegram", "version": "11.0.0", "name": "Telegram Library",
         "description": "High-speed sequential streaming proxy tunnel.",
         "resources": ["catalog", "meta", "stream"], "types": ["movie", "series"],
         "catalogs": [{"type": "movie", "id": "tg_movie", "name": "Telegram Library"}, {"type": "series", "id": "tg_series", "name": "Telegram Library"}]
-    }, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "max-age=86400"})
+    }, headers={"Access-Control-Allow-Origin": "*"})
 
 async def catalog_route(request):
     req_type = request.match_info['type']
     
-    # Offload to worker thread + Memory deduplication (100x faster than MongoDB aggregation)
+    # Offload to worker thread with strict Null-Safety checking!
     def fetch_catalog():
-        docs = list(streams_col.find({"type": req_type}).sort("_id", -1).limit(400))
-        seen, metas = set(), []
-        for d in docs:
-            if d["imdb_id"] not in seen:
-                seen.add(d["imdb_id"])
-                metas.append({"id": d["imdb_id"], "type": req_type, "name": d["file_name"], "poster": d.get("poster"), "description": d.get("description")})
-            if len(metas) >= 100: break
-        return metas
+        try:
+            docs = list(streams_col.find({"type": req_type}).sort("_id", -1).limit(400))
+            seen, metas = set(), []
+            for d in docs:
+                imdb_id = d.get("imdb_id")
+                # 🛑 Null Safety Check: This prevents the blank cards UI crash!
+                if imdb_id and imdb_id not in seen:
+                    seen.add(imdb_id)
+                    metas.append({
+                        "id": imdb_id, 
+                        "type": req_type, 
+                        "name": d.get("file_name", "Unknown Media"), 
+                        "poster": d.get("poster") or "https://images.slideteam.net/wp-content/uploads/2016/11/04/Video-player-icon-graphic-design-PowerPoint-Templates-Slide-1.jpg", 
+                        "description": d.get("description", "")
+                    })
+                if len(metas) >= 100: break
+            return metas
+        except Exception as e:
+            print(f"Catalog Error: {e}", flush=True)
+            return []
 
     metas = await asyncio.to_thread(fetch_catalog)
-    # Aggressive UI Caching
-    return web.json_response({"metas": metas}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "max-age=1800, public"})
+    # Cache-Control removed so your Stremio instantly recovers from the blank cards
+    return web.json_response({"metas": metas}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
 async def meta_route(request):
     req_type, raw_id = request.match_info['type'], request.match_info['id'].replace(".json", "")
@@ -170,14 +193,14 @@ async def meta_route(request):
         
         doc = streams_col.find_one({"imdb_id": raw_id, "type": req_type})
         if not doc: return {"meta": {}}
-        meta = {"id": raw_id, "type": req_type, "name": doc["file_name"], "poster": doc.get("poster"), "description": doc.get("description", "")}
+        meta = {"id": raw_id, "type": req_type, "name": doc.get("file_name", "Media"), "poster": doc.get("poster"), "description": doc.get("description", "")}
         
         if req_type == "series":
-            meta["videos"] = [{"id": f"{raw_id}:{ep['season']}:{ep['episode']}", "title": f"Episode {ep['episode']}", "season": ep["season"], "episode": ep["episode"]} for ep in streams_col.find({"imdb_id": raw_id, "type": "series"}).sort([("season", 1), ("episode", 1)])]
+            meta["videos"] = [{"id": f"{raw_id}:{ep.get('season', 1)}:{ep.get('episode', 1)}", "title": f"Episode {ep.get('episode', 1)}", "season": ep.get("season", 1), "episode": ep.get("episode", 1)} for ep in streams_col.find({"imdb_id": raw_id, "type": "series"}).sort([("season", 1), ("episode", 1)])]
         return {"meta": meta}
 
     result = await asyncio.to_thread(fetch_meta)
-    return web.json_response(result, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "max-age=1800, public"})
+    return web.json_response(result, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
 async def stream_route(request):
     req_type = request.match_info['type']
@@ -185,21 +208,33 @@ async def stream_route(request):
     imdb_id = parts[0]
     
     def fetch_streams():
-        query = {"imdb_id": imdb_id, "season": int(parts[1]), "episode": int(parts[2])} if len(parts) == 3 else {"imdb_id": imdb_id}
+        season, episode = None, None
+        if len(parts) == 3:
+            season, episode = int(parts[1]), int(parts[2])
+            query = {"imdb_id": imdb_id, "season": season, "episode": episode}
+        else:
+            query = {"imdb_id": imdb_id}
+            
+        # 1. Exact IMDB ID Match
         docs = list(streams_col.find(query))
         
+        # 2. 🛡️ Fuzzy Title Match (In case IDs mismatch!)
         if not docs and imdb_id.startswith("tt"):
             try:
                 cm_res = requests.get(f"https://v3-cinemeta.strem.io/meta/{req_type}/{imdb_id}.json", timeout=5).json()
                 if real_name := cm_res.get("meta", {}).get("name"):
-                    base_words = " ".join(re.sub(r'[^a-zA-Z0-9 ]', '', real_name).split()[:2])
-                    docs = list(streams_col.find({"type": "series", "season": int(parts[1]), "episode": int(parts[2]), "file_name": {"$regex": base_words, "$options": "i"}} if len(parts) == 3 else {"type": "movie", "file_name": {"$regex": base_words, "$options": "i"}}))
+                    base_words = " ".join(re.sub(r'[^a-zA-Z0-9 ]', '', real_name).split()[:3])
+                    if season and episode:
+                        fuzzy_query = {"type": "series", "season": season, "episode": episode, "file_name": {"$regex": base_words, "$options": "i"}}
+                    else:
+                        fuzzy_query = {"type": "movie", "file_name": {"$regex": base_words, "$options": "i"}}
+                    docs = list(streams_col.find(fuzzy_query))
             except Exception: pass
 
-        return [{"name": "⚡ FAST STREAM", "title": f"🎬 NATIVE FILE\n💾 {round(d.get('file_size', 0)/(1024*1024), 2) if d.get('file_size') else 'Unknown'} MB", "url": d["tg_url"]} for d in docs]
+        return [{"name": "⚡ NATIVE SPEED", "title": f"🎬 Play File Natively\n💾 {round(d.get('file_size', 0)/(1024*1024), 2) if d.get('file_size') else 'Unknown'} MB", "url": d["tg_url"]} for d in docs]
 
     streams = await asyncio.to_thread(fetch_streams)
-    return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "max-age=3600, public"})
+    return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
 async def watch_route(request):
     file_id = request.match_info['file_id']
