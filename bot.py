@@ -292,6 +292,8 @@ async def watch_route(request):
     except: pass
     return response
 
+import pyrogram
+
 async def main():
     app = web.Application(client_max_size=0)
     for route, handler in [('/', manifest_route), ('/manifest.json', manifest_route), ('/catalog/{type}/{id}.json', catalog_route), ('/meta/{type}/{id}.json', meta_route), ('/stream/{type}/{id}.json', stream_route), ('/watch/{file_id}', watch_route)]:
@@ -302,9 +304,21 @@ async def main():
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     print(f"🟢 Stremio Core Router active on port {PORT}", flush=True)
     
-    await tg_client.start()
+    # ⚡ FLOODWAIT PROTECTION ENGINE
+    try:
+        await tg_client.start()
+        print("🟢 MTProto Engine Connected Successfully!", flush=True)
+    except pyrogram.errors.FloodWait as e:
+        print(f"⚠️ Telegram FloodWait triggered! Waiting {e.value} seconds to respect limits...", flush=True)
+        await asyncio.sleep(e.value)
+        await tg_client.start()
+        print("🟢 MTProto Engine Connected Successfully after waiting!", flush=True)
+    except Exception as e:
+        print(f"❌ Failed to start MTProto Engine: {e}", flush=True)
+    
     threading.Thread(target=telegram_polling_loop, daemon=True).start()
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
+    asyncio.run(main())
     asyncio.run(main())
