@@ -1,5 +1,5 @@
 import asyncio
-# 🛡️ EVENT LOOP PROTECTION: Stabilizes async execution environment for Python 3.14
+# 🛡️ EVENT LOOP PROTECTION
 try:
     asyncio.get_event_loop()
 except RuntimeError:
@@ -17,16 +17,15 @@ from pymongo import MongoClient
 from pyrogram import Client
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-# Using your provided Storage1 cluster as the default connection!
 MONGO_URI = os.getenv("MONGO_URI1", "mongodb+srv://deepthanki1111:Lexh54sjL9BAggp0@storage1.cwhzyf9.mongodb.net/?appName=Storage1").strip()
 API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-# 🔑 TMDB API KEY FOR FLAWLESS SERIES METADATA
+# 🔑 TMDB API KEY
 TMDB_API_KEY = "d8e9f93d8a60953c67c8756c446c72fb"
 
-print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM ACTIVE (TMDB EDITION) ===", flush=True)
+print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM ACTIVE (GOD-LEVEL FALLBACK) ===", flush=True)
 
 # Connect Database Storage Grid
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
@@ -40,10 +39,9 @@ try:
 except Exception:
     pass
 
-# Initialize Pyrogram purely as a passive asset for file downloads
 tg_client = Client("stremio_fine_wine", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
 
-# 🎬 CINEMATIC POSTER & SERIES METADATA MATCHING (POWERED BY TMDB)
+# 🎬 CINEMATIC POSTER & SERIES METADATA MATCHING 
 def fetch_movie_metadata(raw_title):
     try:
         clean = re.sub(r'\.(mkv|mp4|avi|mov|webm)$', '', raw_title, flags=re.IGNORECASE)
@@ -62,7 +60,6 @@ def fetch_movie_metadata(raw_title):
                 sea_match = re.search(r'season\s*(\d+)', clean, re.IGNORECASE)
                 if sea_match: season = int(sea_match.group(1))
 
-        # Strip resolution and encoder tags to get pure movie/series name
         clean = re.sub(r'(1080p|720p|2160p|4k|bluray|hdrip|web\s*dl|brrip|x264|x265|hevc|aac|hindi|english|yts|mx|s\d+e\d+|season\s*\d+|episode\s*\d+|ep\s*\d+).*', '', clean, flags=re.IGNORECASE)
         clean_query = clean.strip()
         if len(clean_query) < 2: clean_query = raw_title[:30]
@@ -70,46 +67,53 @@ def fetch_movie_metadata(raw_title):
         media_type = "tv" if is_series else "movie"
         stremio_type = "series" if is_series else "movie"
 
-        # 1️⃣ SEARCH TMDB DIRECTLY FOR THE BEST ACCURACY
-        tmdb_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={TMDB_API_KEY}&query={urllib.parse.quote(clean_query)}"
-        res = requests.get(tmdb_url, timeout=5).json()
-        
-        if res.get("results"):
-            best_match = res["results"][0]
-            tmdb_id = best_match.get("id")
-            name = best_match.get("name") if is_series else best_match.get("title")
-            poster_path = best_match.get("poster_path")
-            poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
-            desc = best_match.get("overview", "")
-            
-            # 2️⃣ FETCH EXTERNAL IMDB ID SO STREMIO MERGES IT PERFECTLY
-            ext_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/external_ids?api_key={TMDB_API_KEY}"
-            ext_res = requests.get(ext_url, timeout=5).json()
-            imdb_id = ext_res.get("imdb_id")
-            
-            if not imdb_id:
-                # If no IMDB ID (common for some Anime/K-Dramas), generate a permanent hash ID 
-                # so all episodes group under the exact same series folder in Stremio.
-                imdb_id = "tg_" + hashlib.md5(name.encode()).hexdigest()[:10]
+        stremio_id = None
+        poster = None
+        desc = ""
+        name = clean_query
 
-            return {
-                "imdb_id": imdb_id, "name": name, "poster": poster, "desc": desc,
-                "type": stremio_type, "s": season, "e": episode
-            }
+        # 1️⃣ SEARCH CINEMETA FIRST (Guarantees perfect Stremio ID mapping)
+        try:
+            cm_res = requests.get(f"https://v3-cinemeta.strem.io/catalog/{stremio_type}/top/search={urllib.parse.quote(clean_query)}.json", timeout=5).json()
+            if metas := cm_res.get("metas", []):
+                stremio_id = metas[0].get("id")
+                name = metas[0].get("name")
+                poster = metas[0].get("poster")
+                desc = metas[0].get("description", "")
+        except Exception:
+            pass
 
-        # 3️⃣ FALLBACK TO STREMIO CINEMETA IF TMDB FAILS
-        cm_res = requests.get(f"https://v3-cinemeta.strem.io/catalog/{stremio_type}/top/search={urllib.parse.quote(clean_query)}.json", timeout=5).json()
-        if metas := cm_res.get("metas", []):
-            return {
-                "imdb_id": metas[0].get("id"), "name": metas[0].get("name"),
-                "poster": metas[0].get("poster"), "desc": metas[0].get("description", ""),
-                "type": stremio_type, "s": season, "e": episode
-            }
+        # 2️⃣ ENHANCE WITH TMDB (If Cinemeta fails or to get better high-res posters)
+        try:
+            tmdb_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={TMDB_API_KEY}&query={urllib.parse.quote(clean_query)}"
+            res = requests.get(tmdb_url, timeout=5).json()
+            if res.get("results"):
+                best_match = res["results"][0]
+                if not poster and best_match.get("poster_path"):
+                    poster = f"https://image.tmdb.org/t/p/w500{best_match.get('poster_path')}"
+                if not desc:
+                    desc = best_match.get("overview", "")
+                
+                if not stremio_id:
+                    tmdb_id = best_match.get("id")
+                    ext_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/external_ids?api_key={TMDB_API_KEY}"
+                    ext_res = requests.get(ext_url, timeout=5).json()
+                    stremio_id = ext_res.get("imdb_id")
+        except Exception:
+            pass
+            
+        # 3️⃣ FALLBACK HASH ID
+        if not stremio_id:
+            stremio_id = "tg_" + hashlib.md5(name.encode()).hexdigest()[:10]
+
+        return {
+            "imdb_id": stremio_id, "name": name, "poster": poster, "desc": desc,
+            "type": stremio_type, "s": season, "e": episode
+        }
             
     except Exception as e:
         print(f"Metadata error: {e}", flush=True)
 
-    # 4️⃣ ABSOLUTE FALLBACK
     stable_id = "tg_" + hashlib.md5(raw_title[:15].encode()).hexdigest()[:10]
     return {
         "imdb_id": stable_id, "name": raw_title, "type": "movie" if not is_series else "series", 
@@ -118,7 +122,6 @@ def fetch_movie_metadata(raw_title):
         "desc": "Synced Telegram File"
     }
 
-# 📡 BULLETPROOF DECOUPLED HTTP LONG POLLING PIPELINE
 def telegram_polling_loop():
     print("🟢 TELEGRAM BOT LISTENER ONLINE AND ACTIVE", flush=True)
     offset = 0
@@ -144,7 +147,6 @@ def telegram_polling_loop():
                     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
                     continue
 
-                # Process Raw Movie/Series File Attachments
                 media = msg.get("video") or msg.get("document")
                 if media and ("video" in media.get("mime_type", "") or media.get("file_name", "").endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))):
                     file_id = media.get("file_id")
@@ -165,7 +167,6 @@ def telegram_polling_loop():
                     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": reply})
                     continue
 
-                # Process Text Link Blocks
                 if "http" in text_content or "Stream Link" in text_content:
                     urls = re.findall(r'(https?://\S+)', text_content)
                     final_url = next((u for u in urls if "stream" in u or "dl" in u or "vault" in u), urls[0] if urls else None)
@@ -186,11 +187,10 @@ def telegram_polling_loop():
         except Exception:
             time.sleep(2)
 
-# 📡 STREMIO PLATFORM SPECIFICATION ROUTERS
 async def manifest_route(request):
     return web.json_response({
-        "id": "org.deepsstremio.telegram", "version": "8.0.0", "name": "Telegram Library",
-        "description": "Original high-speed sequential streaming proxy tunnel.",
+        "id": "org.deepsstremio.telegram", "version": "9.0.0", "name": "Telegram Library",
+        "description": "High-speed sequential streaming proxy tunnel.",
         "resources": ["catalog", "meta", "stream"], "types": ["movie", "series"],
         "catalogs": [{"type": "movie", "id": "tg_movie", "name": "Telegram Library"},
                      {"type": "series", "id": "tg_series", "name": "Telegram Library"}]
@@ -199,7 +199,6 @@ async def manifest_route(request):
 async def catalog_route(request):
     req_type = request.match_info['type']
     
-    # AGGREGATION: Groups episodes under ONE series poster so the catalog isn't cluttered!
     pipeline = [
         {"$match": {"type": req_type}},
         {"$sort": {"_id": -1}},
@@ -224,12 +223,13 @@ async def meta_route(request):
     req_type = request.match_info['type']
     raw_id = request.match_info['id'].replace(".json", "")
 
-    # Native Stremio UI pass-through
     if raw_id.startswith("tt"):
-        res = requests.get(f"https://v3-cinemeta.strem.io/meta/{req_type}/{raw_id}.json", timeout=5).json()
-        return web.json_response(res, headers={"Access-Control-Allow-Origin": "*"})
+        try:
+            res = requests.get(f"https://v3-cinemeta.strem.io/meta/{req_type}/{raw_id}.json", timeout=5).json()
+            return web.json_response(res, headers={"Access-Control-Allow-Origin": "*"})
+        except Exception:
+            pass
     
-    # Custom Series Handler (For K-Dramas & items without an IMDB ID)
     doc = streams_col.find_one({"imdb_id": raw_id, "type": req_type})
     if not doc:
         return web.json_response({"meta": {}}, headers={"Access-Control-Allow-Origin": "*"})
@@ -239,7 +239,6 @@ async def meta_route(request):
         "poster": doc.get("poster"), "description": doc.get("description", "")
     }
     
-    # Inject custom episode grid so Stremio can render them properly
     if req_type == "series":
         episodes = []
         for ep in streams_col.find({"imdb_id": raw_id, "type": "series"}).sort([("season", 1), ("episode", 1)]):
@@ -253,29 +252,55 @@ async def meta_route(request):
         
     return web.json_response({"meta": meta}, headers={"Access-Control-Allow-Origin": "*"})
 
+# 📡 SMART ROUTER: Exact Match + Fuzzy Title Fallback
 async def stream_route(request):
+    req_type = request.match_info['type']
     parts = request.match_info['id'].replace(".json", "").split(":")
     imdb_id = parts[0]
     
-    # Properly maps click to specific season/episode
+    streams = []
+    
+    # 1. Strict ID Match
     if len(parts) == 3:
         query = {"imdb_id": imdb_id, "season": int(parts[1]), "episode": int(parts[2])}
     else:
         query = {"imdb_id": imdb_id}
         
-    streams = []
-    # Find all available qualities/files for this specific episode/movie
-    for doc in streams_col.find(query):
+    docs = list(streams_col.find(query))
+    
+    # 2. 🛡️ FUZZY TITLE MATCH (God-Level fix for old or mismatched Asian Drama entries)
+    if not docs and imdb_id.startswith("tt"):
+        try:
+            cm_res = requests.get(f"https://v3-cinemeta.strem.io/meta/{req_type}/{imdb_id}.json", timeout=5).json()
+            real_name = cm_res.get("meta", {}).get("name")
+            if real_name:
+                base_words = " ".join(re.sub(r'[^a-zA-Z0-9 ]', '', real_name).split()[:2])
+                if len(parts) == 3:
+                    fuzzy_query = {
+                        "type": "series", 
+                        "season": int(parts[1]), 
+                        "episode": int(parts[2]),
+                        "file_name": {"$regex": base_words, "$options": "i"}
+                    }
+                else:
+                    fuzzy_query = {
+                        "type": "movie",
+                        "file_name": {"$regex": base_words, "$options": "i"}
+                    }
+                docs = list(streams_col.find(fuzzy_query))
+        except Exception as e:
+            print(f"Fuzzy fallback failed: {e}", flush=True)
+
+    for doc in docs:
         size_mb = round(doc.get("file_size", 0) / (1024 * 1024), 2) if doc.get("file_size") else "Unknown"
         streams.append({
-            "title": f"🎬 NATIVE STREAM\n💾 {size_mb} MB",
-            "url": doc["tg_url"],
-            "behaviorHints": {"notWebReady": True}
+            "name": "⚡ FAST STREAM",
+            "title": f"🎬 NATIVE FILE\n💾 {size_mb} MB",
+            "url": doc["tg_url"]
         })
         
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ GOD-LEVEL STREAMING ENGINE: Full HTTP 206 Range Support & Offset Routing
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
@@ -355,7 +380,6 @@ async def watch_route(request):
 
     return response
 
-# 🚀 CONTAINER START ENTRYPOINT
 async def main():
     app = web.Application(client_max_size=0)
     app.router.add_get('/', manifest_route)
