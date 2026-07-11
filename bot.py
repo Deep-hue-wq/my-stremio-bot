@@ -21,7 +21,7 @@ API_ID = int(os.getenv("API_ID", "0").strip())
 API_HASH = os.getenv("API_HASH", "").strip()
 PORT = int(os.getenv("PORT", 10000))
 
-print("\n=== REVERTING TO ORIGINAL CORE: SPIDERMAN FAST-STREAM ACTIVE ===", flush=True)
+print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM ACTIVE ===", flush=True)
 
 # Connect Database Storage Grid
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
@@ -184,33 +184,93 @@ async def stream_route(request):
         except: pass
     return web.json_response({"streams": [{"title": f"🎬 Play Stream Natively", "url": doc["tg_url"]}]} if doc and "tg_url" in doc else {"streams": []}, headers={"Access-Control-Allow-Origin": "*"})
 
-# ⚡ THE ORIGINAL "FINE WINE" SEQUENTIAL STREAMER (Zero-Copy Broadcast Mode)
+# ⚡ GOD-LEVEL STREAMING ENGINE: Full HTTP 206 Range Support & Offset Routing
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = streams_col.find_one({"file_id": file_id})
-    if not doc: return web.Response(status=404)
+    if not doc: 
+        return web.Response(status=404)
+        
     file_size = doc.get("file_size", 0)
+    file_name = doc.get("file_name", "stream.mp4")
     
-    # Force standard HTTP 200 stream mode to stop player probing deadlocks completely
+    # Enable explicit Byte-Range parsing to unblock player buffer stalling
     headers = {
-        "Content-Type": "video/mp4", 
-        "Access-Control-Allow-Origin": "*",
-        "Accept-Ranges": "none"  # Explicitly tells Stremio to download sequentially from byte 0
+        "Accept-Ranges": "bytes",
+        "Content-Type": "video/mp4",
+        "Access-Control-Allow-Origin": "*"
     }
-    if file_size:
-        headers["Content-Disposition"] = f'inline; filename="{doc.get("file_name", "stream.mp4")}"'
-        headers["Content-Length"] = str(file_size)
-            
-    response = web.StreamResponse(status=200, headers=headers)
-    await response.prepare(request)
     
+    range_header = request.headers.get("Range")
+    
+    # Fallback to standard 200 Stream if no range requested (rare but safe)
+    if not range_header or not file_size:
+        headers["Content-Length"] = str(file_size)
+        headers["Content-Disposition"] = f'inline; filename="{file_name}"'
+        response = web.StreamResponse(status=200, headers=headers)
+        await response.prepare(request)
+        
+        try:
+            # Use Pyrogram's raw stream_media generator instead of download_media
+            async for chunk in tg_client.stream_media(file_id):
+                await response.write(chunk)
+                await response.drain()
+        except Exception:
+            pass
+        return response
+
+    # 📡 DYNAMIC RANGE CALCULATION (God-Level Seeking & Instant Metadata Loading)
     try:
-        # Straight socket pass-through connection
-        async for chunk in tg_client.download_media(file_id, chunks=True):
+        range_match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        start_byte = int(range_match.group(1))
+        end_byte = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+    except Exception:
+        start_byte = 0
+        end_byte = file_size - 1
+
+    if start_byte >= file_size:
+        return web.Response(status=416, headers={"Content-Range": f"bytes */{file_size}"})
+
+    content_length = end_byte - start_byte + 1
+    
+    headers.update({
+        "Content-Length": str(content_length),
+        "Content-Range": f"bytes {start_byte}-{end_byte}/{file_size}",
+        "Content-Disposition": f'inline; filename="{file_name}"'
+    })
+
+    # Output strict HTTP 206 Partial Content
+    response = web.StreamResponse(status=206, headers=headers)
+    await response.prepare(request)
+
+    # Telegram distributes files in 1 MiB chunks. We map the byte offset to the chunk index.
+    chunk_size = 1024 * 1024  
+    offset_chunks = start_byte // chunk_size
+    skip_bytes = start_byte % chunk_size
+
+    try:
+        # Seek immediately to the required chunk offset without downloading previous data
+        async for chunk in tg_client.stream_media(file_id, limit=0, offset=offset_chunks):
+            # Trim the first chunk to precisely match the requested byte offset
+            if skip_bytes > 0:
+                chunk = chunk[skip_bytes:]
+                skip_bytes = 0
+            
+            # Close the stream explicitly when the requested range is satisfied
+            if content_length <= len(chunk):
+                await response.write(chunk[:content_length])
+                await response.drain()
+                break
+                
             await response.write(chunk)
             await response.drain()
-    except Exception:
-        pass
+            content_length -= len(chunk)
+            
+    except ConnectionResetError:
+        pass # Handle player abruptly closing the stream socket gracefully
+    except Exception as e:
+        print(f"Stream interrupt: {e}", flush=True)
+
     return response
 
 # 🚀 CONTAINER START ENTRYPOINT
