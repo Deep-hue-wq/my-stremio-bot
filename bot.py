@@ -15,6 +15,7 @@ import hashlib
 from aiohttp import web
 from pymongo import MongoClient
 from pyrogram import Client
+import pyrogram
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MONGO_URI = os.getenv("MONGO_URI1", "mongodb+srv://deepthanki1111:Lexh54sjL9BAggp0@storage1.cwhzyf9.mongodb.net/?appName=Storage1").strip()
@@ -25,7 +26,7 @@ PORT = int(os.getenv("PORT", 10000))
 # 🔑 TMDB API KEY
 TMDB_API_KEY = "d8e9f93d8a60953c67c8756c446c72fb"
 
-print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM (WEEBZONE NATIVE EDITION) ===", flush=True)
+print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM (ZERO-BUFFER EDITION) ===", flush=True)
 
 # Connect Database
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
@@ -41,13 +42,12 @@ tg_client = Client("stremio_fine_wine", api_id=API_ID, api_hash=API_HASH, bot_to
 
 def fetch_movie_metadata(raw_title, text_content=""):
     try:
-        # ⚡ 1. OVERRIDE TRICK: Check if user pasted an IMDB ID (tt...) in the Telegram caption
+        # ⚡ OVERRIDE TRICK: Check if user pasted an IMDB ID (tt...) in the Telegram caption
         forced_imdb_id = None
         imdb_match = re.search(r'(tt\d{7,8})', text_content)
         if imdb_match:
             forced_imdb_id = imdb_match.group(1)
             
-        # ⚡ Also support TMDB URL overrides
         tmdb_match = re.search(r'themoviedb\.org/(movie|tv)/(\d+)', text_content)
         if tmdb_match and not forced_imdb_id:
             m_type, m_id = tmdb_match.group(1), tmdb_match.group(2)
@@ -57,7 +57,6 @@ def fetch_movie_metadata(raw_title, text_content=""):
                 forced_imdb_id = ext_res.get("imdb_id")
             except: pass
 
-        # Clean title & Parse Series Details
         clean = re.sub(r'\.(mkv|mp4|avi|mov|webm)$', '', raw_title, flags=re.IGNORECASE)
         clean = clean.replace('.', ' ').replace('_', ' ')
         
@@ -74,7 +73,6 @@ def fetch_movie_metadata(raw_title, text_content=""):
                 sea_match = re.search(r'season\s*(\d+)', clean, re.IGNORECASE)
                 if sea_match: season = int(sea_match.group(1))
 
-        # Extreme junk tag stripping
         clean = re.sub(r'(1080p|720p|2160p|4k|bluray|hdrip|web\s*dl|brrip|x264|x265|hevc|aac|hindi|english|yts|mx|s\d+e\d+|season\s*\d+|episode\s*\d+|ep\s*\d+|\[.*?\]|\(.*?\)).*', '', clean, flags=re.IGNORECASE)
         clean_query = clean.strip()
         if len(clean_query) < 2: clean_query = "Unknown Media"
@@ -85,7 +83,6 @@ def fetch_movie_metadata(raw_title, text_content=""):
         stremio_id = forced_imdb_id
         poster, desc, name = None, "", clean_query
 
-        # If User provided IMDB ID, fetch exactly that!
         if stremio_id:
             try:
                 cm_res = requests.get(f"https://v3-cinemeta.strem.io/meta/{stremio_type}/{stremio_id}.json", timeout=5).json()
@@ -93,14 +90,12 @@ def fetch_movie_metadata(raw_title, text_content=""):
                     name, poster, desc = cm_res["meta"].get("name", name), cm_res["meta"].get("poster"), cm_res["meta"].get("description", "")
             except: pass
         else:
-            # Auto-Search Cinemeta First for 1:1 Stremio Matching
             try:
                 cm_res = requests.get(f"https://v3-cinemeta.strem.io/catalog/{stremio_type}/top/search={urllib.parse.quote(clean_query)}.json", timeout=5).json()
                 if metas := cm_res.get("metas", []):
                     stremio_id, name, poster, desc = metas[0].get("id"), metas[0].get("name"), metas[0].get("poster"), metas[0].get("description", "")
             except: pass
 
-            # Auto-Search TMDB Fallback
             if not stremio_id:
                 try:
                     tmdb_url = f"https://api.themoviedb.org/3/search/{media_type}?api_key={TMDB_API_KEY}&query={urllib.parse.quote(clean_query)}"
@@ -142,12 +137,12 @@ def telegram_polling_loop():
 
                 media = msg.get("video") or msg.get("document")
                 if media and ("video" in media.get("mime_type", "") or media.get("file_name", "").endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))):
-                    file_id, raw_name, file_size = media.get("file_id"), media.get("file_name", "Stream"), media.get("file_size")
+                    file_id, raw_name, file_size = media.get("file_id"), media.get("file_name", "Stream.mkv"), media.get("file_size")
                     render_domain = os.getenv("RENDER_EXTERNAL_URL", "https://my-stremio-bot-1.onrender.com").rstrip('/')
                     
-                    # Pass the text_content so the bot can hunt for forced IMDB IDs
                     meta = fetch_movie_metadata(raw_name, text_content)
-                    streams_col.insert_one({"file_name": meta["name"], "tg_url": f"{render_domain}/watch/{file_id}", "file_id": file_id, "file_size": file_size, "imdb_id": meta["imdb_id"], "poster": meta["poster"], "description": meta["desc"], "type": meta["type"], "season": meta["s"], "episode": meta["e"]})
+                    # ⚡ We now explicitly save raw_file_name to prevent player buffering 
+                    streams_col.insert_one({"file_name": meta["name"], "raw_file_name": raw_name, "tg_url": f"{render_domain}/watch/{file_id}", "file_id": file_id, "file_size": file_size, "imdb_id": meta["imdb_id"], "poster": meta["poster"], "description": meta["desc"], "type": meta["type"], "season": meta["s"], "episode": meta["e"]})
                     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"✅ Synced: {meta['name']} (S{meta['s']}E{meta['e']})"})
                     continue
 
@@ -157,19 +152,19 @@ def telegram_polling_loop():
                         name_match = re.search(r'File:\s*(.*)', text_content, re.IGNORECASE)
                         file_name = name_match.group(1).split("\n")[0].strip() if name_match else text_content.split("\n")[0].strip()
                         meta = fetch_movie_metadata(file_name, text_content)
-                        streams_col.insert_one({"file_name": meta["name"], "tg_url": final_url, "imdb_id": meta["imdb_id"], "poster": meta["poster"], "description": meta["desc"], "type": meta["type"], "season": meta["s"], "episode": meta["e"]})
+                        streams_col.insert_one({"file_name": meta["name"], "raw_file_name": file_name, "tg_url": final_url, "imdb_id": meta["imdb_id"], "poster": meta["poster"], "description": meta["desc"], "type": meta["type"], "season": meta["s"], "episode": meta["e"]})
                         requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"✅ Link Synced: {meta['name']} (S{meta['s']}E{meta['e']})"})
             if not req.json().get("result", []): time.sleep(1)
         except Exception: time.sleep(2)
 
 async def manifest_route(request):
     return web.json_response({
-        "id": "org.deepsstremio.telegram", "version": "12.0.0", "name": "Telegram Library",
-        "description": "High-speed sequential streaming proxy tunnel.",
+        "id": "org.deepsstremio.telegram", "version": "13.0.0", "name": "Telegram Library",
+        "description": "High-speed sequential streaming proxy tunnel with Zero-Buffer Demuxing.",
         "resources": [
             "catalog", 
             "stream", 
-            {"name": "meta", "types": ["movie", "series"], "idPrefixes": ["tg_"]} # ⚡ NATIVE HANDOFF: Stremio now handles official TV posters natively!
+            {"name": "meta", "types": ["movie", "series"], "idPrefixes": ["tg_"]}
         ], 
         "types": ["movie", "series"],
         "catalogs": [{"type": "movie", "id": "tg_movie", "name": "Telegram Library"}, {"type": "series", "id": "tg_series", "name": "Telegram Library"}],
@@ -196,7 +191,6 @@ async def catalog_route(request):
     return web.json_response({"metas": metas}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
 async def meta_route(request):
-    # This route is now ONLY called for Custom "tg_" IDs, vastly reducing server load!
     req_type, raw_id = request.match_info['type'], request.match_info['id'].replace(".json", "")
 
     def fetch_meta():
@@ -225,7 +219,6 @@ async def stream_route(request):
             
         docs = list(streams_col.find(query))
         
-        # Fuzzy Fallback
         if not docs and imdb_id.startswith("tt"):
             try:
                 cm_res = requests.get(f"https://v3-cinemeta.strem.io/meta/{req_type}/{imdb_id}.json", timeout=5).json()
@@ -238,22 +231,41 @@ async def stream_route(request):
                     docs = list(streams_col.find(fuzzy_query))
             except: pass
 
-        return [{"name": "⚡ NATIVE SPEED", "title": f"🎬 Play File Natively\n💾 {round(d.get('file_size', 0)/(1024*1024), 2) if d.get('file_size') else 'Unknown'} MB", "url": d["tg_url"]} for d in docs]
+        return [{"name": "⚡ ZERO BUFFER", "title": f"🎬 Play File Natively\n💾 {round(d.get('file_size', 0)/(1024*1024), 2) if d.get('file_size') else 'Unknown'} MB", "url": d["tg_url"]} for d in docs]
 
     streams = await asyncio.to_thread(fetch_streams)
     return web.json_response({"streams": streams}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
+# ⚡ THE ZERO-BUFFER DEMUXER ROUTE
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = await asyncio.to_thread(streams_col.find_one, {"file_id": file_id})
     if not doc: return web.Response(status=404)
         
-    file_size, file_name = doc.get("file_size", 0), doc.get("file_name", "stream.mp4")
-    headers = {"Accept-Ranges": "bytes", "Content-Type": "video/mp4", "Access-Control-Allow-Origin": "*"}
+    file_size = doc.get("file_size", 0)
+    
+    # Safely extract the most accurate file extension to prevent player panics
+    raw_name = doc.get("raw_file_name") or doc.get("file_name", "Stream.mkv")
+    if not re.search(r'\.\w{3,4}$', raw_name): 
+        raw_name += ".mkv"  # Fallback assumption for old DB entries
+        
+    # Dynamically map the exact MIME Type
+    mime_type = "video/x-matroska"
+    if raw_name.lower().endswith(".mp4"): mime_type = "video/mp4"
+    elif raw_name.lower().endswith(".webm"): mime_type = "video/webm"
+    elif raw_name.lower().endswith(".avi"): mime_type = "video/x-msvideo"
+    
+    headers = {
+        "Accept-Ranges": "bytes", 
+        "Content-Type": mime_type, 
+        "Access-Control-Allow-Origin": "*",
+        "Connection": "keep-alive" # Keeps the TCP connection open aggressively
+    }
+    
     range_header = request.headers.get("Range")
     
     if not range_header or not file_size:
-        headers.update({"Content-Length": str(file_size), "Content-Disposition": f'inline; filename="{file_name}"'})
+        headers.update({"Content-Length": str(file_size), "Content-Disposition": f'inline; filename="{raw_name}"'})
         response = web.StreamResponse(status=200, headers=headers)
         await response.prepare(request)
         try:
@@ -272,7 +284,12 @@ async def watch_route(request):
     if start_byte >= file_size: return web.Response(status=416, headers={"Content-Range": f"bytes */{file_size}"})
 
     content_length = end_byte - start_byte + 1
-    headers.update({"Content-Length": str(content_length), "Content-Range": f"bytes {start_byte}-{end_byte}/{file_size}", "Content-Disposition": f'inline; filename="{file_name}"'})
+    headers.update({
+        "Content-Length": str(content_length), 
+        "Content-Range": f"bytes {start_byte}-{end_byte}/{file_size}", 
+        "Content-Disposition": f'inline; filename="{raw_name}"'
+    })
+    
     response = web.StreamResponse(status=206, headers=headers)
     await response.prepare(request)
 
@@ -284,15 +301,12 @@ async def watch_route(request):
             if skip_bytes > 0: chunk, skip_bytes = chunk[skip_bytes:], 0
             if content_length <= len(chunk):
                 await response.write(chunk[:content_length])
-                await response.drain()
-                break
+                break # Prevents backpressure delay on the absolute last chunk
             await response.write(chunk)
             await response.drain()
             content_length -= len(chunk)
     except: pass
     return response
-
-import pyrogram
 
 async def main():
     app = web.Application(client_max_size=0)
@@ -304,12 +318,11 @@ async def main():
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     print(f"🟢 Stremio Core Router active on port {PORT}", flush=True)
     
-    # ⚡ FLOODWAIT PROTECTION ENGINE
     try:
         await tg_client.start()
         print("🟢 MTProto Engine Connected Successfully!", flush=True)
     except pyrogram.errors.FloodWait as e:
-        print(f"⚠️ Telegram FloodWait triggered! Waiting {e.value} seconds to respect limits...", flush=True)
+        print(f"⚠️ Telegram FloodWait! Waiting {e.value} seconds...", flush=True)
         await asyncio.sleep(e.value)
         await tg_client.start()
         print("🟢 MTProto Engine Connected Successfully after waiting!", flush=True)
@@ -320,5 +333,4 @@ async def main():
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    asyncio.run(main())
     asyncio.run(main())
