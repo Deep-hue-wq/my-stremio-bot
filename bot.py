@@ -25,7 +25,7 @@ PORT = int(os.getenv("PORT", 10000))
 
 TMDB_API_KEY = "d8e9f93d8a60953c67c8756c446c72fb"
 
-print("\n=== STARTING CORE: SPIDERMAN FAST-STREAM (GOD-LEVEL PREFETCH EDITION) ===", flush=True)
+print("\n=== STARTING CORE: SPIDERMAN HYPER-DRIVE (PARALLEL MTPROTO EDITION) ===", flush=True)
 
 # Connect Database
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tls=True, tlsAllowInvalidCertificates=True)
@@ -37,7 +37,15 @@ try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=5)
 except Exception: pass
 
-tg_client = Client("stremio_fine_wine", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
+# Configure Pyrogram with optimized worker threads for handling intensive concurrent chunks
+tg_client = Client(
+    "stremio_fine_wine", 
+    api_id=API_ID, 
+    api_hash=API_HASH, 
+    bot_token=BOT_TOKEN, 
+    in_memory=True,
+    workers=16
+)
 
 async def keep_alive_task():
     while True:
@@ -163,8 +171,8 @@ def telegram_polling_loop():
 
 async def manifest_route(request):
     return web.json_response({
-        "id": "org.deepsstremio.telegram", "version": "15.0.0", "name": "Telegram Library",
-        "description": "True Zero-Buffer Prefetching Proxy Tunnel.",
+        "id": "org.deepsstremio.telegram", "version": "16.0.0", "name": "Telegram Library",
+        "description": "True Parallel MTProto Speed Booster Tunnel.",
         "resources": ["catalog", "stream", {"name": "meta", "types": ["movie", "series"], "idPrefixes": ["tg_"]}], 
         "types": ["movie", "series"],
         "catalogs": [{"type": "movie", "id": "tg_movie", "name": "Telegram Library"}, {"type": "series", "id": "tg_series", "name": "Telegram Library"}],
@@ -220,14 +228,24 @@ async def stream_route(request):
         results = []
         for d in docs:
             is_cloud = d.get("is_cloud", False)
-            title_tag = "🌐 DIRECT CLOUD (Max Speed)" if is_cloud else "⚡ ZERO BUFFER PREFETCH"
+            title_tag = "🌐 DIRECT CLOUD (Max Speed)" if is_cloud else "🚀 GOD-LEVEL MTPROTO PARALLEL"
             size_tag = f"\n💾 {round(d.get('file_size', 0)/(1024*1024), 2)} MB" if d.get('file_size') else ""
             results.append({"name": "SPIDERMAN", "title": f"🎬 {title_tag}{size_tag}", "url": d["tg_url"]})
         return results
 
     return web.json_response({"streams": await asyncio.to_thread(fetch_streams)}, headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
-# ⚡ THE ASYNC PREFETCH DEMUXER 
+# 🛡️ HELPER FUNCTION TO FETCH A SINGLE CHUNK ON AN ISOLATED TCP CONNECTION
+async def download_single_chunk(file_id, chunk_index):
+    try:
+        # Pull only 1 single chunk from this offset, closing the lane instantly after delivery
+        async for chunk in tg_client.stream_media(file_id, limit=1, offset=chunk_index):
+            return chunk
+    except Exception:
+        pass
+    return b""
+
+# ⚡ THE ASYNC PARALLEL PREFETCH DEMUXER
 async def watch_route(request):
     file_id = request.match_info['file_id']
     doc = await asyncio.to_thread(streams_col.find_one, {"file_id": file_id})
@@ -249,7 +267,7 @@ async def watch_route(request):
         rm = re.match(r"bytes=(\d+)-(\d*)", range_header) if range_header else None
         start_byte = int(rm.group(1)) if rm else 0
         end_byte = int(rm.group(2)) if rm and rm.group(2) else file_size - 1
-    except:
+    except Exception:
         start_byte, end_byte = 0, file_size - 1
 
     if start_byte >= file_size: return web.Response(status=416, headers={"Content-Range": f"bytes */{file_size}"})
@@ -265,24 +283,48 @@ async def watch_route(request):
         
     await response.prepare(request)
 
-    chunk_size = 1024 * 1024  
-    offset_chunks, skip_bytes = start_byte // chunk_size, start_byte % chunk_size
+    chunk_size = 1024 * 1024  # Standard 1MB chunks
+    start_chunk = start_byte // chunk_size
+    skip_bytes = start_byte % chunk_size
+    end_chunk = end_byte // chunk_size
 
-    # 🚀 PRODUCER: Download ahead of the player into RAM
-    chunk_queue = asyncio.Queue(maxsize=15) 
+    # 🚀 PARALLEL BUFFER PRODUCER (4-lane parallel prefetch engine)
+    chunk_queue = asyncio.Queue(maxsize=20)
     
-    async def fetcher_task():
-        try:
-            nonlocal skip_bytes
-            async for chunk in tg_client.stream_media(file_id, limit=0, offset=offset_chunks):
-                if skip_bytes > 0: chunk, skip_bytes = chunk[skip_bytes:], 0
+    async def parallel_loader():
+        current_chunk = start_chunk
+        concurrency_limit = 4  # Opens exactly 4 parallel MTProto lanes simultaneously!
+        
+        nonlocal skip_bytes
+        while current_chunk <= end_chunk:
+            # Map up to 4 consecutive chunk tasks
+            tasks = []
+            chunk_indices = []
+            for i in range(concurrency_limit):
+                target_chunk = current_chunk + i
+                if target_chunk <= end_chunk:
+                    tasks.append(download_single_chunk(file_id, target_chunk))
+                    chunk_indices.append(target_chunk)
+            
+            if not tasks:
+                break
+                
+            # Blast tasks out concurrently over parallel sockets
+            downloaded_chunks = await asyncio.gather(*tasks)
+            
+            for chunk in downloaded_chunks:
+                if skip_bytes > 0:
+                    chunk = chunk[skip_bytes:]
+                    skip_bytes = 0
                 await chunk_queue.put(chunk)
-        except Exception: pass
-        finally: await chunk_queue.put(None)
+                
+            current_chunk += len(tasks)
+            
+        await chunk_queue.put(None)
 
-    producer = asyncio.create_task(fetcher_task())
+    producer_task = asyncio.create_task(parallel_loader())
 
-    # 🚀 CONSUMER: Blast RAM buffer instantly to TV
+    # 🚀 CONSUMER: Pipe data from the pre-warmed RAM queue into Stremio instantly
     try:
         while content_length > 0:
             chunk = await chunk_queue.get()
@@ -296,7 +338,7 @@ async def watch_route(request):
             content_length -= len(chunk)
     except Exception: pass
     finally:
-        producer.cancel()
+        producer_task.cancel()
 
     return response
 
