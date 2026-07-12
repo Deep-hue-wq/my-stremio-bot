@@ -1,0 +1,4 @@
+aiohttp
+pymongo
+pyrogram
+TgCrypto
